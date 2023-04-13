@@ -2,19 +2,21 @@ use std::{process::{Child, ChildStdin, ChildStdout, Command, Stdio}, io::{BufWri
 
 use sysinfo::{SystemExt, PidExt, Pid, ProcessExt, ProcessStatus};
 
+use crate::{Kill, Restart};
+
 pub struct Process {
     pub process: Child,
     pub stdin: BufWriter<ChildStdin>,
-    pub stdout: Option<BufReader<ChildStdout>>,
+    pub stdout: Option<ChildStdout>,
     stop_checker_thread: JoinHandle<()>,
     internal_stopped: Arc<Mutex<bool>>,
 }
 
 impl Process {
-    fn new() -> Self {
-        let mut process = Command::new("node")
+    pub fn new() -> Self {
+        let mut process = Command::new("sh")
             .current_dir("server")
-            .arg("main.js")
+            .arg("./run.sh")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
@@ -22,11 +24,13 @@ impl Process {
         ;
         let pid = process.id();
 
+        println!("{}", pid);
+
         let mut system = sysinfo::System::new();
         system.refresh_all();
 
         let stdin = BufWriter::new(process.stdin.take().expect("Internal IO Error: Failed To Aquire Nodejs Process Stdin"));
-        let stdout = BufReader::new(process.stdout.take().expect("Internal IO Error: Failed To Aquire Nodejs Process Stdou"));
+        let stdout = process.stdout.take().expect("Internal IO Error: Failed To Aquire Nodejs Process Stdou");
 
         let internal_stopped = Arc::new(Mutex::new(false));
         let internal_stopped_clone = Arc::clone(&internal_stopped);
@@ -60,8 +64,18 @@ impl Process {
     pub fn is_stopped(&self) -> bool {
         *self.internal_stopped.lock().unwrap()
     }
-    pub fn kill(self) {
+}
+
+impl Kill for Process {
+    fn kill(self) {
         self.stop_checker_thread.join().unwrap();
+    }
+}
+
+impl Restart for Process {
+    fn restart(self) -> Self {
+        self.stop_checker_thread.join().unwrap();
+        Process::new()
     }
 }
 

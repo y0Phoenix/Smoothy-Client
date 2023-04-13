@@ -2,7 +2,7 @@ use std::{io::{BufWriter, Stdout, Write, BufReader, BufRead}, fs::{File, OpenOpt
 
 use time::OffsetDateTime;
 
-use crate::process::ProcessStdout;
+use crate::{process::ProcessStdout, Restart, Kill};
 
 pub struct LogFile {
     tx_thread: JoinHandle<()>,
@@ -46,7 +46,7 @@ impl LogFile {
                     }
                     let mut output = String::new();
                     stdout_buf.read_line(&mut output).expect("Internal IO Error: Error Reading Line From Child Process stdout");
-
+                    print!("{}", output);
                     let _ = stdout_tx.send(output);
                 }
             })
@@ -140,7 +140,10 @@ impl LogFile {
         new_file.flush().expect("IO Error: Failed To Flush Old Log Data To New Archive Log File");
 
     }
-    pub fn kill(self) {
+}
+
+impl Kill for LogFile {
+    fn kill(self) {
         self.flusher_thread.join().unwrap();
         self.rx_thread.join().unwrap();
         self.tx_thread.join().unwrap();

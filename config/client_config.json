@@ -1,3 +1,4 @@
 {
-    "restart_time": "00:00"
+    "restart_time": "00:00",
+    "global_data_file": "server/config/global.json"
 }
