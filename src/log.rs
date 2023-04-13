@@ -1,6 +1,6 @@
 use std::{io::{BufWriter, Stdout, Write, BufReader, BufRead}, fs::{File, OpenOptions, read_dir, FileType}, thread::{JoinHandle, self}, sync::{mpsc::{Receiver, self, Sender}, Arc, Mutex}, process::ChildStdout, time::Duration};
 
-use time::OffsetDateTime;
+use chrono::{Local, Timelike, Datelike};
 
 use crate::{process::ProcessStdout, Restart, Kill};
 
@@ -58,7 +58,6 @@ impl LogFile {
             })
             .expect("Internal Thread Error: Failed to Spawn [thread:stdoutreader]")
         ;
-
         let rx_thread = thread::Builder::new()
             .name("stdoutreciever".to_string())
             .spawn(move || {
@@ -139,8 +138,7 @@ impl LogFile {
             return;
         }
 
-        let sys_time = OffsetDateTime::now_local().unwrap();
-
+        let sys_time = Local::now().naive_local(); 
         let formatted_path = format!("logs/archives/log {} {} {} {}", sys_time.month(), sys_time.day(), sys_time.hour(), sys_time.minute());
 
         let mut new_file = File::create(formatted_path).expect("IO Error: Failed To Create New Archive Log File");

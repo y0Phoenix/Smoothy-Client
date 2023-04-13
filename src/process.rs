@@ -1,7 +1,5 @@
 use std::{process::{Child, ChildStdin, ChildStdout, Command, Stdio, ExitStatus}, io::{BufWriter, BufReader}, sync::{Arc, Mutex, mpsc::{self, Sender}}, thread::{JoinHandle, self}, time::Duration};
 
-use sysinfo::{SystemExt, PidExt, Pid, ProcessExt, ProcessStatus};
-
 use crate::{Kill, Restart};
 
 pub struct Process {
@@ -26,9 +24,6 @@ impl Process {
         let pid = process.id();
 
         println!("{}", pid);
-
-        let mut system = sysinfo::System::new_all();
-        system.refresh_all();
 
         let stdin = BufWriter::new(process.stdin.take().expect("Internal IO Error: Failed To Aquire Nodejs Process Stdin"));
         let stdout = process.stdout.take().expect("Internal IO Error: Failed To Aquire Nodejs Process Stdou");
