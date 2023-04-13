@@ -54,6 +54,7 @@ fn main() {
     'main: loop {
         if cmp_time(&app.config_data.restart_time) || app.process_plugin.is_stopped() {
             app.process_plugin = app.process_plugin.restart();
+            app.log_plugin.new_stdout(ProcessStdout(BufReader::new(app.process_plugin.stdout.take().unwrap())));
         }
     }
 }

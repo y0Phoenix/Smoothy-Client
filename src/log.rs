@@ -1,4 +1,4 @@
-use std::{io::{BufWriter, Stdout, Write, BufReader, BufRead}, fs::{File, OpenOptions, read_dir, FileType}, thread::{JoinHandle, self}, sync::{mpsc::{Receiver, self}, Arc, Mutex}, process::ChildStdout};
+use std::{io::{BufWriter, Stdout, Write, BufReader, BufRead}, fs::{File, OpenOptions, read_dir, FileType}, thread::{JoinHandle, self}, sync::{mpsc::{Receiver, self, Sender}, Arc, Mutex}, process::ChildStdout, time::Duration};
 
 use time::OffsetDateTime;
 
@@ -7,7 +7,8 @@ use crate::{process::ProcessStdout, Restart, Kill};
 pub struct LogFile {
     tx_thread: JoinHandle<()>,
     rx_thread: JoinHandle<()>,
-    flusher_thread: JoinHandle<()>
+    flusher_thread: JoinHandle<()>,
+    new_stdout_tx: Sender<ProcessStdout>
 }
 
 impl LogFile {
@@ -34,12 +35,17 @@ impl LogFile {
         let out_buf_lines_clone = Arc::clone(&out_buf_lines);
 
         let (stdout_tx, stdout_rx) = mpsc::channel::<String>();
+        let (new_stdout_tx, new_stdout_rx) = mpsc::channel::<ProcessStdout>();
 
         let tx_thread = thread::Builder::new()
             .name("stdoutreader".to_string())
             .spawn(move || {
                 let mut stdout_buf = stdout.0;
                 loop {
+                    match new_stdout_rx.recv_timeout(Duration::from_secs(1)) {
+                        Ok(new_stdout) => stdout_buf = new_stdout.0,
+                        _ => {},
+                    }
                     if stdout_buf.buffer().len() >= stdout_buf.capacity() {
                         let stdout = stdout_buf.into_inner();
                         stdout_buf = BufReader::new(stdout);
@@ -94,7 +100,12 @@ impl LogFile {
             .expect("Internal Thread Error: Failed to Spawn [thread:stdoutflusher]")
         ;
 
-        Self { tx_thread, rx_thread, flusher_thread }
+        Self { 
+            tx_thread,
+            rx_thread,
+            flusher_thread,
+            new_stdout_tx
+        }
     }
     pub fn archive_log(log_file: File) {
         let archives = read_dir("logs/archives").expect("Internal Error: Error Opening Log Archives Folder");
@@ -139,6 +150,9 @@ impl LogFile {
         new_file.write_all(old_buf.buffer()).expect("IO Error: Failed To Write Old Log Data To New Archive Log Buffer");
         new_file.flush().expect("IO Error: Failed To Flush Old Log Data To New Archive Log File");
 
+    }
+    pub fn new_stdout(&mut self, process_stdout: ProcessStdout) {
+       let _ = self.new_stdout_tx.send(process_stdout); 
     }
 }
 

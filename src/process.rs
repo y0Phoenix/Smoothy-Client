@@ -1,11 +1,10 @@
-use std::{process::{Child, ChildStdin, ChildStdout, Command, Stdio}, io::{BufWriter, BufReader}, sync::{Arc, Mutex}, thread::{JoinHandle, self}, time::Duration};
+use std::{process::{Child, ChildStdin, ChildStdout, Command, Stdio, ExitStatus}, io::{BufWriter, BufReader}, sync::{Arc, Mutex}, thread::{JoinHandle, self}, time::Duration};
 
 use sysinfo::{SystemExt, PidExt, Pid, ProcessExt, ProcessStatus};
 
 use crate::{Kill, Restart};
 
 pub struct Process {
-    pub process: Child,
     pub stdin: BufWriter<ChildStdin>,
     pub stdout: Option<ChildStdout>,
     stop_checker_thread: JoinHandle<()>,
@@ -14,9 +13,9 @@ pub struct Process {
 
 impl Process {
     pub fn new() -> Self {
-        let mut process = Command::new("sh")
+        let mut process = Command::new("node")
             .current_dir("server")
-            .arg("./run.sh")
+            .arg("build/main.js")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
@@ -26,7 +25,7 @@ impl Process {
 
         println!("{}", pid);
 
-        let mut system = sysinfo::System::new();
+        let mut system = sysinfo::System::new_all();
         system.refresh_all();
 
         let stdin = BufWriter::new(process.stdin.take().expect("Internal IO Error: Failed To Aquire Nodejs Process Stdin"));
@@ -39,22 +38,14 @@ impl Process {
             .name("stopchecker".to_string())
             .spawn(move || {
                 let internal_stopped = internal_stopped_clone;
-                let process_info = system.process(Pid::from_u32(pid)).unwrap();
-                loop {
-                    let process_status = process_info.status();
-                    if process_status != ProcessStatus::Idle && process_status != ProcessStatus::Run && process_status != ProcessStatus::Sleep {
-                        let mut internal_stopped = internal_stopped.lock().unwrap();
-                        *internal_stopped = true;
-                        break;
-                    }
-                    thread::sleep(Duration::from_secs(1));
-                }
+                let _ = process.wait();
+                println!("Smoothy Stopped");
+                *internal_stopped.lock().unwrap() = true;
             })
             .unwrap()
         ;
 
         Self { 
-            process, 
             stdin, 
             stdout: Some(stdout), 
             stop_checker_thread,
