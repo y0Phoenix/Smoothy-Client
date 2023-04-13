@@ -52,10 +52,16 @@ fn main() {
     let mut app = App::new();
 
     'main: loop {
-        if cmp_time(&app.config_data.restart_time) || app.process_plugin.is_stopped() {
+        let restart = cmp_time(&app.config_data.restart_time); 
+        if restart || app.process_plugin.is_stopped() {
             app.process_plugin = app.process_plugin.restart();
             log(log::LogType::INFO, "Restarting Smoothy");
-            app.log_plugin.new_stdout(ProcessStdout(BufReader::new(app.process_plugin.stdout.take().unwrap())));
+            if restart {
+                app.log_plugin = LogFile::new(ProcessStdout(BufReader::new(app.process_plugin.stdout.take().unwrap())));
+            }
+            else {
+                app.log_plugin.new_stdout(ProcessStdout(BufReader::new(app.process_plugin.stdout.take().unwrap())));
+            }
         }
         thread::sleep(Duration::from_secs(1));
     }
