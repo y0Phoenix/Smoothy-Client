@@ -91,7 +91,7 @@ impl LogFile {
                 loop {
                     let mut out_buf = out_buf.lock().unwrap();
                     let mut out_buf_lines = out_buf_lines.lock().unwrap();
-                    if *out_buf_lines > 15 {
+                    if *out_buf_lines > 5 {
                         out_buf.flush().expect("Internal IO Error: Failed To Flush Log File BufWriter in [thread:stdoutflusher]");
                         *out_buf_lines = 0;
                     }

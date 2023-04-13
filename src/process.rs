@@ -1,4 +1,4 @@
-use std::{process::{Child, ChildStdin, ChildStdout, Command, Stdio, ExitStatus}, io::{BufWriter, BufReader}, sync::{Arc, Mutex}, thread::{JoinHandle, self}, time::Duration};
+use std::{process::{Child, ChildStdin, ChildStdout, Command, Stdio, ExitStatus}, io::{BufWriter, BufReader}, sync::{Arc, Mutex, mpsc::{self, Sender}}, thread::{JoinHandle, self}, time::Duration};
 
 use sysinfo::{SystemExt, PidExt, Pid, ProcessExt, ProcessStatus};
 
@@ -7,14 +7,16 @@ use crate::{Kill, Restart};
 pub struct Process {
     pub stdin: BufWriter<ChildStdin>,
     pub stdout: Option<ChildStdout>,
+    server_folder: String,
+    kill_tx: Sender<bool>,
     stop_checker_thread: JoinHandle<()>,
     internal_stopped: Arc<Mutex<bool>>,
 }
 
 impl Process {
-    pub fn new() -> Self {
+    pub fn new(server_folder: String) -> Self {
         let mut process = Command::new("node")
-            .current_dir("server")
+            .current_dir(server_folder.as_str())
             .arg("build/main.js")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -34,13 +36,30 @@ impl Process {
         let internal_stopped = Arc::new(Mutex::new(false));
         let internal_stopped_clone = Arc::clone(&internal_stopped);
 
+        let (kill_tx, kill_rx) = mpsc::channel::<bool>();
+
         let stop_checker_thread = thread::Builder::new()
             .name("stopchecker".to_string())
             .spawn(move || {
                 let internal_stopped = internal_stopped_clone;
-                let _ = process.wait();
-                println!("Smoothy Stopped");
-                *internal_stopped.lock().unwrap() = true;
+                loop {
+                    match kill_rx.recv_timeout(Duration::from_secs(1)) {
+                        Ok(_) => {
+                            process.kill();
+                            break;
+                        },
+                        _ => {},
+                    }
+                    match process.try_wait() {
+                        Ok(Some(_)) => {
+                            println!("Smoothy Stopped");
+                            *internal_stopped.lock().unwrap() = true;
+                            break;
+                        },
+                        Ok(None) => {},
+                        Err(_) => {},
+                    }    
+                }
             })
             .unwrap()
         ;
@@ -49,7 +68,9 @@ impl Process {
             stdin, 
             stdout: Some(stdout), 
             stop_checker_thread,
-            internal_stopped
+            internal_stopped,
+            kill_tx,
+            server_folder
         }
     }   
     pub fn is_stopped(&self) -> bool {
@@ -57,16 +78,26 @@ impl Process {
     }
 }
 
+impl Default for Process {
+    fn default() -> Self {
+        Self::new("server".to_string())
+    }
+}
+
 impl Kill for Process {
     fn kill(self) {
+        let _ = self.kill_tx.send(true);
         self.stop_checker_thread.join().unwrap();
+        drop(self.kill_tx);
     }
 }
 
 impl Restart for Process {
     fn restart(self) -> Self {
+        let _ = self.kill_tx.send(true);
         self.stop_checker_thread.join().unwrap();
-        Process::new()
+        drop(self.kill_tx);
+        Process::new(self.server_folder)
     }
 }
 

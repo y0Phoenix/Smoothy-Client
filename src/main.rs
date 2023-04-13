@@ -1,8 +1,8 @@
-use std::io::BufReader;
+use std::{io::BufReader, thread, time::Duration};
 
 use chrono::{Local, NaiveTime};
 use config::Config;
-use log::LogFile;
+use log::{LogFile, log};
 use process::{Process, ProcessStdout};
 use smoothy::Smoothy;
 
@@ -30,7 +30,7 @@ impl App {
     fn new() -> Self {
         let config_data = Config::read();
 
-        let mut process_plugin = Process::new();
+        let mut process_plugin = Process::new(config_data.server_folder.clone());
 
         let process_stdout = ProcessStdout(BufReader::new(process_plugin.stdout.take().unwrap()));
 
@@ -54,13 +54,14 @@ fn main() {
     'main: loop {
         if cmp_time(&app.config_data.restart_time) || app.process_plugin.is_stopped() {
             app.process_plugin = app.process_plugin.restart();
+            log(log::LogType::INFO, "Restarting Smoothy");
             app.log_plugin.new_stdout(ProcessStdout(BufReader::new(app.process_plugin.stdout.take().unwrap())));
         }
+        thread::sleep(Duration::from_secs(1));
     }
 }
 
 fn cmp_time(time: &String) -> bool {
-    let curr_time = Local::now().time();
-    let time_to_check = NaiveTime::parse_from_str(time, "%H:%M").expect("Error: Invalid Time Format In Config File. Format Should Be %H:%M");
-    curr_time == time_to_check 
+    let curr_time = Local::now().format("%H:%M:%S").to_string();
+    curr_time == *time 
 }
