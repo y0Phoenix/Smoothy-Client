@@ -1,4 +1,4 @@
-use std::{io::{BufWriter, Stdout, Write, BufReader, BufRead}, fs::{File, OpenOptions, read_dir, FileType}, thread::{JoinHandle, self}, sync::{mpsc::{Receiver, self, Sender}, Arc, Mutex}, process::ChildStdout, time::Duration};
+use std::{io::{BufWriter, Stdout, Write, BufReader, BufRead}, fs::{File, OpenOptions, read_dir, FileType, ReadDir, self, create_dir}, thread::{JoinHandle, self}, sync::{mpsc::{Receiver, self, Sender}, Arc, Mutex}, process::ChildStdout, time::Duration};
 
 use chrono::{Local, Timelike, Datelike};
 
@@ -14,6 +14,9 @@ pub struct LogFile {
 impl LogFile {
     pub fn new(stdout: ProcessStdout) -> Self {
         let mut new_log = true;
+        if !fs::metadata("logs").is_ok() {
+            create_dir("logs").expect("FS Error: Failed To Create logs Directory");
+        }
         let out_file = match OpenOptions::new()
             .write(true)
             .open("logs/log.txt") 
@@ -109,7 +112,12 @@ impl LogFile {
         }
     }
     pub fn archive_log(log_file: File) {
-        let archives = read_dir("logs/archives").expect("Internal Error: Error Opening Log Archives Folder");
+        let archives: ReadDir;
+        if !fs::metadata("logs/archives").is_ok() {
+            fs::create_dir("logs/archives").expect("FS Error: Failed To Create archives Directory");
+        }
+
+        archives = read_dir("logs/archives").expect("Internal Error: Error Opening Log Archives Folder");
 
         let mut files = Vec::<DirFile>::new();
 
@@ -119,7 +127,7 @@ impl LogFile {
                     if let Ok(file_type) = file.file_type() {
                         match file.file_name().into_string() {
                             Ok(name) => {
-                                if !name.contains("log") {
+                                 if !name.contains("log") {
                                     log(LogType::WARN, format!("Incompatable File Found In Archives: {}", &name).as_str());
                                     continue;
                                 }
