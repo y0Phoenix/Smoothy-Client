@@ -52,6 +52,8 @@ impl LogFile {
                     }
                     let mut output = String::new();
                     stdout_buf.read_line(&mut output).expect("Internal IO Error: Error Reading Line From Child Process stdout");
+                    let curr_time = Local::now();
+                    output = format!("[{}]: {}", curr_time.format("%m/%d/%y %H:%M:%S"), output);
                     print!("{}", output);
                     let _ = stdout_tx.send(output);
                 }
@@ -139,9 +141,9 @@ impl LogFile {
         }
 
         let sys_time = Local::now().naive_local(); 
-        let formatted_path = format!("logs/archives/log {}/{}:{}:{}", sys_time.month(), sys_time.day(), sys_time.hour(), sys_time.minute());
+        let formatted_path = format!("logs/archives/log {}-{} {}:{}", sys_time.month(), sys_time.day(), sys_time.hour(), sys_time.minute());
 
-        let mut new_file = File::create(formatted_path).expect("IO Error: Failed To Create New Archive Log File");
+        let mut new_file = File::create(formatted_path).expect("FS Error: Failed To Create New Archive Log File");
 
         let old_buf = BufReader::new(log_file);
 
