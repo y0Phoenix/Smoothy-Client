@@ -139,7 +139,7 @@ impl LogFile {
         }
 
         let sys_time = Local::now().naive_local(); 
-        let formatted_path = format!("logs/archives/log {} {} {} {}", sys_time.month(), sys_time.day(), sys_time.hour(), sys_time.minute());
+        let formatted_path = format!("logs/archives/log {}/{}:{}:{}", sys_time.month(), sys_time.day(), sys_time.hour(), sys_time.minute());
 
         let mut new_file = File::create(formatted_path).expect("IO Error: Failed To Create New Archive Log File");
 
