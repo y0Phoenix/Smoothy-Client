@@ -1,8 +1,7 @@
 use std::fs::read_to_string;
 use serde::*;
-
 fn read_data(path: &String) -> GlobalData {
-    let global_data = read_to_string(path).expect(format!("FS Error: Failed To Read Contents Of {:?}", path).as_str());
+    let global_data = read_to_string(path).unwrap_or_else(|_| panic!("FS Error: Failed To Read Contents Of {:?}", path));
 
     serde_json::from_str::<GlobalData>(&global_data).expect("Error: Failed To Parsed Global Data")
 }
@@ -31,7 +30,7 @@ pub struct Servers(Vec<Server>);
 
 impl Servers {
     pub fn print(&self) {
-        if self.0.len() == 0 {
+        if self.0.is_empty() {
             println!("Not Currently Connected To Any Server");
         }
         else {
@@ -83,6 +82,7 @@ impl Server {
     }
 }
 
+#[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GlobalData {
     queues: Vec<WriteQueue>,
@@ -104,6 +104,7 @@ pub struct WriteIdle {
     id: String
 }
 
+#[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WriteMessage {
     guild: Guild,

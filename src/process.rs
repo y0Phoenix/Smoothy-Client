@@ -1,4 +1,4 @@
-use std::{process::{Child, ChildStdin, ChildStdout, Command, Stdio, ExitStatus}, io::{BufWriter, BufReader}, sync::{Arc, Mutex, mpsc::{self, Sender}}, thread::{JoinHandle, self}, time::Duration};
+use std::{process::{ChildStdin, ChildStdout, Command, Stdio}, io::{BufWriter, BufReader}, sync::{Arc, Mutex, mpsc::{self, Sender}}, thread::{JoinHandle, self}, time::Duration};
 
 use crate::{Kill, Restart, log::log};
 
@@ -24,7 +24,7 @@ impl Process {
         ;
         let pid = Arc::new(Mutex::new(process.id()));
 
-        log(crate::log::LogType::INFO, format!("Aquired PID: {}", process.id()).as_str());
+        log(crate::log::LogType::Info, format!("Aquired PID: {}", process.id()).as_str());
 
         let stdin = BufWriter::new(process.stdin.take().expect("Internal IO Error: Failed To Aquire Nodejs Process Stdin"));
         let stdout = process.stdout.take().expect("Internal IO Error: Failed To Aquire Nodejs Process Stdou");
@@ -39,15 +39,12 @@ impl Process {
             .spawn(move || {
                 let internal_stopped = internal_stopped_clone;
                 loop {
-                    match kill_rx.recv_timeout(Duration::from_secs(2)) {
-                        Ok(_) => {
-                            log(crate::log::LogType::INFO, "Attemping To Kill Smoothy");
-                            process.kill().expect("Internale IO Error: Failed To Kill Smoothy Process");
-                            process.wait().expect("Internal IO Error: Failed To Kill Smoothy Process");
-                            log(crate::log::LogType::INFO, "Smoothy Successfully Killed");
-                            break;
-                        },
-                        _ => {},
+                    if kill_rx.recv_timeout(Duration::from_secs(2)).is_ok() {
+                        log(crate::log::LogType::Info, "Attemping To Kill Smoothy");
+                        process.kill().expect("Internale IO Error: Failed To Kill Smoothy Process");
+                        process.wait().expect("Internal IO Error: Failed To Kill Smoothy Process");
+                        log(crate::log::LogType::Info, "Smoothy Successfully Killed");
+                        break;
                     }
                     match process.try_wait() {
                         Ok(Some(_)) => {

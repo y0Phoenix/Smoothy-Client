@@ -68,11 +68,11 @@ fn main() {
         match system.process(Pid::from(pid as usize)) {
             Some(process) => {
                 match process.kill() {
-                    true => log(log::LogType::INFO, "Smoothy Successfully Killed"),
-                    false => log(log::LogType::ERR, format!("Failed To Kill Smoothy With PID: {}", pid).as_str()),
+                    true => log(log::LogType::Info, "Smoothy Successfully Killed"),
+                    false => log(log::LogType::Err, format!("Failed To Kill Smoothy With PID: {}", pid).as_str()),
                 }
             },
-            None => log(log::LogType::ERR, format!("No Valid Process Found For Smoothy's PID: {}", pid).as_str())
+            None => log(log::LogType::Err, format!("No Valid Process Found For Smoothy's PID: {}", pid).as_str())
         }
         default_panic(info);
     }));
@@ -82,7 +82,7 @@ fn main() {
         let restart = cmp_time(&app.config_data.restart_time) || input == InputCommand::Restart; 
         if restart || app.process_plugin.is_stopped() {
             app.process_plugin = app.process_plugin.restart();
-            log(log::LogType::INFO, "Restarting Smoothy");
+            log(log::LogType::Info, "Restarting Smoothy");
             if restart {
                 app.log_plugin = LogFile::new(ProcessStdout(BufReader::new(app.process_plugin.stdout.take().unwrap())));
             }
@@ -93,7 +93,7 @@ fn main() {
         match input {
             InputCommand::Restart => {
                 app.process_plugin = app.process_plugin.restart();
-                log(log::LogType::INFO, "Restarting Smoothy");
+                log(log::LogType::Info, "Restarting Smoothy");
                 app.log_plugin.new_stdout(ProcessStdout(BufReader::new(app.process_plugin.stdout.take().unwrap())));
             },
             InputCommand::ListServers => {
@@ -102,12 +102,12 @@ fn main() {
                     Ok(servers) => {
                         servers.print();
                     },
-                    _ => log(log::LogType::WARN, "No Servers Found Or An Error Occured")
+                    _ => log(log::LogType::Warn, "No Servers Found Or An Error Occured")
                 }
             },
             InputCommand::Exit => {
-                log(log::LogType::INFO, "Exiting App");
-                log(log::LogType::INFO, "Killing Smoothy");
+                log(log::LogType::Info, "Exiting App");
+                log(log::LogType::Info, "Killing Smoothy");
                 app.kill();
                 break 'main;
             },

@@ -1,8 +1,8 @@
-use std::{io::{BufWriter, Stdout, Write, BufReader, BufRead}, fs::{File, OpenOptions, read_dir, FileType, ReadDir, self, create_dir}, thread::{JoinHandle, self}, sync::{mpsc::{Receiver, self, Sender}, Arc, Mutex}, process::ChildStdout, time::Duration};
+use std::{io::{BufWriter, Write, BufReader, BufRead}, fs::{File, OpenOptions, read_dir, self, create_dir}, thread::{JoinHandle, self}, sync::{mpsc::{self, Sender}, Arc, Mutex},  time::Duration};
 
 use chrono::{Local, Timelike, Datelike};
 
-use crate::{process::ProcessStdout, Restart, Kill};
+use crate::{process::ProcessStdout, Kill};
 
 pub struct LogFile {
     tx_thread: JoinHandle<()>,
@@ -15,7 +15,7 @@ pub struct LogFile {
 impl LogFile {
     pub fn new(stdout: ProcessStdout) -> Self {
         let mut new_log = true;
-        if !fs::metadata("logs").is_ok() {
+        if fs::metadata("logs").is_err() {
             create_dir("logs").expect("FS Error: Failed To Create logs Directory");
         }
         let out_file = match OpenOptions::new()
@@ -33,7 +33,7 @@ impl LogFile {
             LogFile::archive_log(out_file.try_clone().unwrap());
         }
         let killed = Arc::new(Mutex::new(false));
-        let (killed_clone_1, killed_clone_2, killed_clone_3) = (Arc::clone(&killed), Arc::clone(&killed), Arc::clone(&killed));
+        let (killed_clone_1, killed_clone_2) = (Arc::clone(&killed), Arc::clone(&killed));
         
         let out_buf = Arc::new(Mutex::new(BufWriter::new(out_file.try_clone().unwrap())));
         let out_buf_clone = Arc::clone(&out_buf);
@@ -48,9 +48,8 @@ impl LogFile {
             .spawn(move || {
                 let mut stdout_buf = stdout.0;
                 loop {
-                    match new_stdout_rx.recv_timeout(Duration::from_secs(1)) {
-                        Ok(new_stdout) => stdout_buf = new_stdout.0,
-                        _ => {},
+                    if let Ok(new_stdout) = new_stdout_rx.recv_timeout(Duration::from_secs(1)) {
+                        stdout_buf = new_stdout.0;
                     }
                     if stdout_buf.buffer().len() >= stdout_buf.capacity() {
                         let stdout = stdout_buf.into_inner();
@@ -78,17 +77,14 @@ impl LogFile {
                 loop {
                     match stdout_rx.recv() {
                         Ok(msg) => {
-                            match out_buf.lock().unwrap().write(msg.as_bytes()) {
-                                Err(e) => {
-                                    log(LogType::ERR, format!("IO Error: Failed To Write To File Buffer: {}", e).as_str());
-                                    continue
-                                },
-                                _ => {}
+                            if let Err(e) = out_buf.lock().unwrap().write(msg.as_bytes()) {
+                                log(LogType::Err, format!("IO Error: Failed To Write To File Buffer: {}", e).as_str());
+                                continue
                             }
                             *out_buf_lines.lock().unwrap() += 1;
                         },
                         Err(_) => {
-                            log(LogType::INFO, "Finished");
+                            log(LogType::Info, "Finished");
                             break
                         }
                     }
@@ -103,8 +99,8 @@ impl LogFile {
                 let out_buf = Arc::clone(&out_buf_clone);
                 let out_buf_lines = Arc::clone(&out_buf_lines_clone);
                 loop {
-                    if *killed_clone_3.lock().unwrap() {
-                        log(LogType::INFO, "Finished");
+                    if *killed_clone_2.lock().unwrap() {
+                        log(LogType::Info, "Finished");
                         break;
                     }
                     let mut out_buf = out_buf.lock().unwrap();
@@ -127,39 +123,36 @@ impl LogFile {
         }
     }
     pub fn archive_log(log_file: File) {
-        let archives: ReadDir;
-        if !fs::metadata("logs/archives").is_ok() {
+        if fs::metadata("logs/archives").is_err() {
             fs::create_dir("logs/archives").expect("FS Error: Failed To Create archives Directory");
         }
 
-        archives = read_dir("logs/archives").expect("Internal Error: Error Opening Log Archives Folder");
+        let archives = read_dir("logs/archives").expect("Internal Error: Error Opening Log Archives Folder");
 
         let mut files = Vec::<DirFile>::new();
 
-        for (i, file) in archives.into_iter().enumerate() {
+        for file in archives.into_iter() {
             match file {
                 Ok(file) => {
-                    if let Ok(file_type) = file.file_type() {
-                        match file.file_name().into_string() {
-                            Ok(name) => {
-                                 if !name.contains("log") {
-                                    log(LogType::WARN, format!("Incompatable File Found In Archives: {}", &name).as_str());
-                                    continue;
-                                }
-                                files.push(DirFile { name, file_type });
-                            },
-                            Err(e) => log(LogType::ERR, format!("Error Converting {:?} To String For Internal Use", e).as_str()) 
-                        }
+                    match file.file_name().into_string() {
+                        Ok(name) => {
+                            if !name.contains("log") {
+                                log(LogType::Warn, format!("Incompatable File Found In Archives: {}", &name).as_str());
+                                continue;
+                            }
+                            files.push(DirFile);
+                        },
+                        Err(e) => log(LogType::Err, format!("Error Converting {:?} To String For Internal Use", e).as_str()) 
                     }
                 },
                 Err(_) => {
-                    log(LogType::WARN, "There Was A Problem Acessing A Log Archive File")
+                    log(LogType::Warn, "There Was A Problem Acessing A Log Archive File")
                 }
             }
         }
 
         if files.len() > 15 {
-            log(LogType::WARN, "Log Archive Has Reached The Maximum of 15. Delete Some To Remove This Warning");
+            log(LogType::Warn, "Log Archive Has Reached The Maximum of 15. Delete Some To Remove This Warning");
             return;
         }
 
@@ -188,26 +181,12 @@ impl Kill for LogFile {
     }
 }
 
-pub struct DirFile {
-    name: String,
-    file_type: FileType
-}
-
-pub struct ConsoleLog {
-    stdout: Stdout
-}
-
-impl ConsoleLog {
-    fn new() -> Self {
-        let stdout = std::io::stdout();
-        Self {stdout}
-    }
-}
+pub struct DirFile;
 
 pub enum LogType {
-    WARN,
-    INFO,
-    ERR
+    Warn,
+    Info,
+    Err
 }
 
 impl LogType {
@@ -215,9 +194,9 @@ impl LogType {
         let curr_thread = thread::current();
         let thread_name = curr_thread.name().unwrap_or("unamed");
         match self {
-            LogType::WARN => format!("[thread:{}:WARN]:", thread_name),
-            LogType::INFO => format!("[thread:{}:INFO]:", thread_name),
-            LogType::ERR => format!("[thread:{}:ERR]:", thread_name),
+            LogType::Warn => format!("[thread:{}:WARN]:", thread_name),
+            LogType::Info => format!("[thread:{}:INFO]:", thread_name),
+            LogType::Err => format!("[thread:{}:ERR]:", thread_name),
         }
     } 
 }

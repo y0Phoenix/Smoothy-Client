@@ -1,4 +1,4 @@
-use std::{thread::{JoinHandle, self}, sync::{Arc, Mutex, mpsc}};
+use std::{thread::{JoinHandle, self}, sync::{Arc, Mutex}};
 
 use crate::Kill;
 
@@ -13,14 +13,6 @@ pub enum InputCommand {
     None
 } 
 
-impl InputCommand {
-    pub fn take(&mut self) -> Self {
-        let old_self = self.clone();
-        *self = InputCommand::default();
-        old_self
-    }
-}
-
 pub struct Input {
    check_input_thread: JoinHandle<()>,
    killed: Arc<Mutex<bool>>,
@@ -29,8 +21,6 @@ pub struct Input {
 
 impl Input {
     pub fn new() -> Self {
-        let (input_rx, input_tx) = mpsc::channel::<String>();
-
         let input = Arc::new(Mutex::new(String::new()));
         let killed = Arc::new(Mutex::new(false));
 
