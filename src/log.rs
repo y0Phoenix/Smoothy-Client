@@ -8,7 +8,8 @@ pub struct LogFile {
     tx_thread: JoinHandle<()>,
     rx_thread: JoinHandle<()>,
     flusher_thread: JoinHandle<()>,
-    new_stdout_tx: Sender<ProcessStdout>
+    new_stdout_tx: Sender<ProcessStdout>,
+    killed: Arc<Mutex<bool>>
 }
 
 impl LogFile {
@@ -31,6 +32,8 @@ impl LogFile {
         if !new_log {
             LogFile::archive_log(out_file.try_clone().unwrap());
         }
+        let killed = Arc::new(Mutex::new(false));
+        let (killed_clone_1, killed_clone_2, killed_clone_3) = (Arc::clone(&killed), Arc::clone(&killed), Arc::clone(&killed));
         
         let out_buf = Arc::new(Mutex::new(BufWriter::new(out_file.try_clone().unwrap())));
         let out_buf_clone = Arc::clone(&out_buf);
@@ -55,10 +58,14 @@ impl LogFile {
                     }
                     let mut output = String::new();
                     stdout_buf.read_line(&mut output).expect("Internal IO Error: Error Reading Line From Child Process stdout");
-                    let curr_time = Local::now();
-                    output = format!("[{}]: {}", curr_time.format("%m/%d/%y %H:%M:%S"), output);
-                    print!("{}", output);
-                    let _ = stdout_tx.send(output);
+                    if output.is_empty() && *killed_clone_1.lock().unwrap() {
+                        break;
+                    }
+                    if !output.is_empty() {
+                        output = format!("{} {}", log_time(), output);
+                        print!("{output}");
+                        let _ = stdout_tx.send(output);
+                    }
                 }
             })
             .expect("Internal Thread Error: Failed to Spawn [thread:stdoutreader]")
@@ -80,7 +87,10 @@ impl LogFile {
                             }
                             *out_buf_lines.lock().unwrap() += 1;
                         },
-                        Err(_) => break
+                        Err(_) => {
+                            log(LogType::INFO, "Finished");
+                            break
+                        }
                     }
                 }
             })
@@ -93,6 +103,10 @@ impl LogFile {
                 let out_buf = Arc::clone(&out_buf_clone);
                 let out_buf_lines = Arc::clone(&out_buf_lines_clone);
                 loop {
+                    if *killed_clone_3.lock().unwrap() {
+                        log(LogType::INFO, "Finished");
+                        break;
+                    }
                     let mut out_buf = out_buf.lock().unwrap();
                     let mut out_buf_lines = out_buf_lines.lock().unwrap();
                     if *out_buf_lines > 5 {
@@ -108,7 +122,8 @@ impl LogFile {
             tx_thread,
             rx_thread,
             flusher_thread,
-            new_stdout_tx
+            new_stdout_tx,
+            killed
         }
     }
     pub fn archive_log(log_file: File) {
@@ -166,6 +181,7 @@ impl LogFile {
 
 impl Kill for LogFile {
     fn kill(self) {
+        *self.killed.lock().unwrap() = true;
         self.flusher_thread.join().unwrap();
         self.rx_thread.join().unwrap();
         self.tx_thread.join().unwrap();
@@ -199,13 +215,18 @@ impl LogType {
         let curr_thread = thread::current();
         let thread_name = curr_thread.name().unwrap_or("unamed");
         match self {
-            LogType::WARN => format!("[thread:{}:WARN] ", thread_name),
-            LogType::INFO => format!("[thread:{}:INFO] ", thread_name),
-            LogType::ERR => format!("[thread:{}:ERR] ", thread_name),
+            LogType::WARN => format!("[thread:{}:WARN]:", thread_name),
+            LogType::INFO => format!("[thread:{}:INFO]:", thread_name),
+            LogType::ERR => format!("[thread:{}:ERR]:", thread_name),
         }
     } 
 }
 
+pub fn log_time() -> String {
+    let curr_time = Local::now();
+    format!("[{}]:", curr_time.format("%m/%d/%y %H:%M:%S"))
+}
+
 pub fn log(log_type: LogType, msg: &str) {
-    println!("{}{}", log_type.prefix(), msg);
+    println!("{} {} {}", log_time(), log_type.prefix(), msg);
 }

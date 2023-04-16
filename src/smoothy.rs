@@ -1,82 +1,101 @@
-use std::{sync::{Arc, Mutex}, thread::{JoinHandle, self}, path::Path, fs::{read_to_string, File}, fmt::Debug, io::BufReader, time::Duration};
-
+use std::fs::read_to_string;
 use serde::*;
 
-use crate::Kill;
+fn read_data(path: &String) -> GlobalData {
+    let global_data = read_to_string(path).expect(format!("FS Error: Failed To Read Contents Of {:?}", path).as_str());
 
-pub struct Smoothy {
-    global_data: Arc<Mutex<GlobalData>>,
-    is_killed: Arc<Mutex<bool>>,
-    reader_thread: JoinHandle<()>
-
+    serde_json::from_str::<GlobalData>(&global_data).expect("Error: Failed To Parsed Global Data")
 }
 
-impl Smoothy {
-    pub fn new(path: String) -> Self {
-        let global_data = Arc::new(Mutex::new(Smoothy::read_data(&path)));
-        let is_killed = Arc::new(Mutex::new(false));
+pub fn get_servers(path: String) -> Result<Servers, ()> {
+    let global_data = read_data(&path);
 
-        let is_killed_clone = Arc::clone(&is_killed);
-        let global_data_clone = Arc::clone(&global_data);
+    let mut servers = Vec::new();
 
-        let reader_thread = thread::Builder::new()
-            .name("globalreader".to_string())
-            .spawn(move || {
-                let is_killed = is_killed_clone;
-                let global_data = global_data_clone;
-                loop {
-                    let new_global_data = Smoothy::read_data(&path);
-                    let mut global_data = global_data.lock().unwrap();
-                    *global_data = new_global_data;
-                    thread::sleep(Duration::from_secs(10));
-                    if *is_killed.lock().unwrap() {
-                        break;
-                    }
-                }
-            })
-            .unwrap()
-        ;
+    for queue in global_data.queues {
+        let mut curr_song: Option<Song> = None;
+        for song in queue.currentsong {
+            curr_song = Some(song);
+        }
+        
+        servers.push(Server {
+            name: queue.name.to_string(),
+            songs: queue.songs,
+            curr_song
+        }); 
+    }
+    Ok(Servers(servers))
+}  
 
-        Self { 
-            global_data,
-            is_killed,
-            reader_thread 
+pub struct Servers(Vec<Server>);
+
+impl Servers {
+    pub fn print(&self) {
+        for server in self.0.iter() {
+            server.print();
         }
     }
+}
 
-    fn read_data(path: &String) -> GlobalData {
-        let global_data = read_to_string(path).expect(format!("FS Error: Failed To Read Contents Of {:?}", path).as_str());
+pub struct Server {
+    name: String,
+    songs: Vec<Song>,
+    curr_song: Option<Song>
+}
 
-        serde_json::from_str::<GlobalData>(&global_data).expect("Error: Failed To Parsed Global Data")
+impl Server {
+    pub fn print(&self) {
+        println!("VC: {}", self.name);
+        match self.curr_song.clone() {
+            Some(curr_song) => {
+                println!("Current Song: \n
+                         \tTitle: {}\n
+                         \tDuration: {}\n
+                         \tUrl: {}", curr_song.title, curr_song.duration, curr_song.url)
+                    ;
+            },
+            None => {
+                println!("Current Song: No Song Currently Playing");
+            }
+        }
+        println!("Songs In Queue");
+        if self.songs.len() > 0 {
+            for (i, song) in self.songs.iter().enumerate() {
+                println!("{}\n
+                         \tTitle: {}\n
+                         \tDuration: {}\n
+                         \tUrl: {}", i, song.title, song.duration, song.url)
+                    ;
+            }
+        }
+        else {
+            println!("No Other Songs In Queue");
+        }
     }
 }
 
-impl Kill for Smoothy {
-    fn kill(self) {
-        self.reader_thread.join().unwrap();
-    }
-}
-
-
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct GlobalData {
     queues: Vec<WriteQueue>,
     disconnectIdles: Vec<WriteIdle>
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct WriteQueue {
     message: WriteMessage,
     id: String,
+    name: String,
+    songs: Vec<Song>,
+    currentsong: [Song; 1],
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct WriteIdle {
     message: WriteMessage,
     id: String
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct WriteMessage {
     guild: Guild,
     author: Author,
@@ -84,12 +103,20 @@ pub struct WriteMessage {
     id: String
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct Guild {
-    id: String
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Song {
+    title: String,
+    url: String,
+    duration: u32
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Guild {
+    id: String,
+    name: String
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Author {
     id: String
 }

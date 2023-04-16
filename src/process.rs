@@ -1,6 +1,6 @@
 use std::{process::{Child, ChildStdin, ChildStdout, Command, Stdio, ExitStatus}, io::{BufWriter, BufReader}, sync::{Arc, Mutex, mpsc::{self, Sender}}, thread::{JoinHandle, self}, time::Duration};
 
-use crate::{Kill, Restart};
+use crate::{Kill, Restart, log::log};
 
 pub struct Process {
     pub stdin: BufWriter<ChildStdin>,
@@ -23,7 +23,7 @@ impl Process {
         ;
         let pid = process.id();
 
-        println!("{}", pid);
+        log(crate::log::LogType::INFO, format!("Aquired PID: {pid}").as_str());
 
         let stdin = BufWriter::new(process.stdin.take().expect("Internal IO Error: Failed To Aquire Nodejs Process Stdin"));
         let stdout = process.stdout.take().expect("Internal IO Error: Failed To Aquire Nodejs Process Stdou");
@@ -38,9 +38,12 @@ impl Process {
             .spawn(move || {
                 let internal_stopped = internal_stopped_clone;
                 loop {
-                    match kill_rx.recv_timeout(Duration::from_secs(1)) {
+                    match kill_rx.recv_timeout(Duration::from_secs(2)) {
                         Ok(_) => {
-                            process.kill();
+                            log(crate::log::LogType::INFO, "Attemping To Kill Smoothy");
+                            process.kill().expect("Internale IO Error: Failed To Kill Smoothy Process");
+                            process.wait().expect("Internal IO Error: Failed To Kill Smoothy Process");
+                            log(crate::log::LogType::INFO, "Smoothy Successfully Killed");
                             break;
                         },
                         _ => {},
@@ -83,7 +86,6 @@ impl Kill for Process {
     fn kill(self) {
         let _ = self.kill_tx.send(true);
         self.stop_checker_thread.join().unwrap();
-        drop(self.kill_tx);
     }
 }
 
