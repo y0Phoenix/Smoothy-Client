@@ -41,7 +41,7 @@ impl App {
         let process_stdout = ProcessStdout(BufReader::new(process_plugin.stdout.take().unwrap()));
 
         Self { 
-            log_plugin: LogFile::new(process_stdout), 
+            log_plugin: LogFile::new(process_stdout, config_data.max_file_size), 
             pid: process_plugin.pid.clone(),
             process_plugin ,
             config_data,
@@ -79,12 +79,17 @@ fn main() {
 
     'main: loop {
         let input = app.input_plugin.input();
-        let restart = cmp_time(&app.config_data.restart_time) || input == InputCommand::Restart; 
-        if restart || app.process_plugin.is_stopped() {
-            app.process_plugin = app.process_plugin.restart();
-            log(log::LogType::Info, "Restarting Smoothy");
+        let restart = cmp_time(&app.config_data.restart_time); 
+        if restart || app.process_plugin.is_stopped() || input == InputCommand::Restart {
             if restart {
-                app.log_plugin = LogFile::new(ProcessStdout(BufReader::new(app.process_plugin.stdout.take().unwrap())));
+                log(log::LogType::Info, format!("Restarting Smoothy From Configured Time Of {}", app.config_data.restart_time).as_str());
+            }
+            else {
+                log(log::LogType::Info, "Restarting Smoothy");
+            }
+            app.process_plugin = app.process_plugin.restart();
+            if restart {
+                app.log_plugin = LogFile::new(ProcessStdout(BufReader::new(app.process_plugin.stdout.take().unwrap())), app.config_data.max_file_size);
             }
             else {
                 app.log_plugin.new_stdout(ProcessStdout(BufReader::new(app.process_plugin.stdout.take().unwrap())));

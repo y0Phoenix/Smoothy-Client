@@ -8,6 +8,7 @@ pub struct Config {
     pub restart_time: String,
     pub global_data_file: String,
     pub server_folder: String,
+    pub max_file_size: usize
 }
 
 impl Config {

@@ -1,25 +1,27 @@
-use std::{io::{BufWriter, Write, BufReader, BufRead}, fs::{File, OpenOptions, read_dir, self, create_dir}, thread::{JoinHandle, self}, sync::{mpsc::{self, Sender}, Arc, Mutex},  time::Duration};
+use std::{io::{BufWriter, Write, BufReader, BufRead, Read}, fs::{File, OpenOptions, read_dir, self, create_dir}, thread::{JoinHandle, self}, sync::{mpsc::{self, Sender}, Arc, Mutex},  time::Duration};
 
-use chrono::{Local, Timelike, Datelike};
+use chrono::Local;
 
 use crate::{process::ProcessStdout, Kill};
 
+const MB: usize = 1024 * 1024;
+// const GB: usize = 1024 * 1000000;
+
 pub struct LogFile {
-    tx_thread: JoinHandle<()>,
-    rx_thread: JoinHandle<()>,
-    flusher_thread: JoinHandle<()>,
+    logger_thread: JoinHandle<()>,
     new_stdout_tx: Sender<ProcessStdout>,
     killed: Arc<Mutex<bool>>
 }
 
 impl LogFile {
-    pub fn new(stdout: ProcessStdout) -> Self {
+    pub fn new(stdout: ProcessStdout, max_file_size: usize) -> Self {
         let mut new_log = true;
         if fs::metadata("logs").is_err() {
             create_dir("logs").expect("FS Error: Failed To Create logs Directory");
         }
-        let out_file = match OpenOptions::new()
+        let mut out_file = match OpenOptions::new()
             .write(true)
+            .read(true)
             .open("logs/log.txt") 
         {
             Ok(file) => {
@@ -30,23 +32,22 @@ impl LogFile {
         };
 
         if !new_log {
-            LogFile::archive_log(out_file.try_clone().unwrap());
+            out_file = LogFile::archive_log(out_file.try_clone().unwrap(), max_file_size);
         }
         let killed = Arc::new(Mutex::new(false));
-        let (killed_clone_1, killed_clone_2) = (Arc::clone(&killed), Arc::clone(&killed));
-        
-        let out_buf = Arc::new(Mutex::new(BufWriter::new(out_file.try_clone().unwrap())));
-        let out_buf_clone = Arc::clone(&out_buf);
-        let out_buf_lines = Arc::new(Mutex::new(0));
-        let out_buf_lines_clone = Arc::clone(&out_buf_lines);
+        let killed_clone = Arc::clone(&killed);
 
-        let (stdout_tx, stdout_rx) = mpsc::channel::<String>();
+        let mut out_buf = BufWriter::new(out_file.try_clone().unwrap());
+
         let (new_stdout_tx, new_stdout_rx) = mpsc::channel::<ProcessStdout>();
 
-        let tx_thread = thread::Builder::new()
+        let logger_thread = thread::Builder::new()
             .name("stdoutreader".to_string())
             .spawn(move || {
                 let mut stdout_buf = stdout.0;
+                let mut out_buf_lines = 0;
+                let mut file_size = 0;
+                let mut displayed_warning = false;
                 loop {
                     if let Ok(new_stdout) = new_stdout_rx.recv_timeout(Duration::from_secs(1)) {
                         stdout_buf = new_stdout.0;
@@ -57,72 +58,43 @@ impl LogFile {
                     }
                     let mut output = String::new();
                     stdout_buf.read_line(&mut output).expect("Internal IO Error: Error Reading Line From Child Process stdout");
-                    if output.is_empty() && *killed_clone_1.lock().unwrap() {
+                    if output.is_empty() && *killed_clone.lock().unwrap() {
                         break;
                     }
                     if !output.is_empty() {
-                        output = format!("{} {}", log_time(), output);
-                        print!("{output}");
-                        let _ = stdout_tx.send(output);
+                        file_size += output.as_bytes().len();
+                        if file_size < max_file_size {
+                            output = format!("{} {}", log_time(), output);
+                            print!("{output}");
+                            if let Err(e) = out_buf.write(output.as_bytes()) {
+                                log(LogType::Err, format!("IO Error: Failed To Write To File Buffer: {}", e).as_str());
+                                continue
+                            }
+                            out_buf_lines += 1;
+                            if out_buf_lines > 5 {
+                                out_buf.flush().expect("Internal FS Error: Failed To Flush Log File BufWriter in [thread:stdoutflusher]");
+                                out_buf_lines = 0;
+                            }
+                        }
+                        else if !displayed_warning {
+                            log(LogType::Warn, "Max File Size Reached For log.txt");
+                            out_buf.flush().expect("Internal FS Error: Failed To Flush Log File BufWriter in [thread:stdoutflusher]");
+                            displayed_warning = true;
+                        }
                     }
                 }
             })
             .expect("Internal Thread Error: Failed to Spawn [thread:stdoutreader]")
         ;
-        let rx_thread = thread::Builder::new()
-            .name("stdoutreciever".to_string())
-            .spawn(move || {
-                let out_buf = Arc::clone(&out_buf);
-                let out_buf_lines = Arc::clone(&out_buf_lines);
-                loop {
-                    match stdout_rx.recv() {
-                        Ok(msg) => {
-                            if let Err(e) = out_buf.lock().unwrap().write(msg.as_bytes()) {
-                                log(LogType::Err, format!("IO Error: Failed To Write To File Buffer: {}", e).as_str());
-                                continue
-                            }
-                            *out_buf_lines.lock().unwrap() += 1;
-                        },
-                        Err(_) => {
-                            log(LogType::Info, "Finished");
-                            break
-                        }
-                    }
-                }
-            })
-            .expect("Internal Thread Error: Failed to Spawn [thread:stdoutreciever]")
-        ;
-
-        let flusher_thread = thread::Builder::new()
-            .name("stdoutflusher".to_string())
-            .spawn(move || {
-                let out_buf = Arc::clone(&out_buf_clone);
-                let out_buf_lines = Arc::clone(&out_buf_lines_clone);
-                loop {
-                    if *killed_clone_2.lock().unwrap() {
-                        log(LogType::Info, "Finished");
-                        break;
-                    }
-                    let mut out_buf = out_buf.lock().unwrap();
-                    let mut out_buf_lines = out_buf_lines.lock().unwrap();
-                    if *out_buf_lines > 5 {
-                        out_buf.flush().expect("Internal IO Error: Failed To Flush Log File BufWriter in [thread:stdoutflusher]");
-                        *out_buf_lines = 0;
-                    }
-                }
-            })
-            .expect("Internal Thread Error: Failed to Spawn [thread:stdoutflusher]")
-        ;
 
         Self { 
-            tx_thread,
-            rx_thread,
-            flusher_thread,
+            logger_thread,
             new_stdout_tx,
-            killed
+            killed,
         }
     }
-    pub fn archive_log(log_file: File) {
+    pub fn archive_log(mut log_file: File, max_file_size: usize) -> File {
+        log(LogType::Info, "Creating New Archived Log File");
         if fs::metadata("logs/archives").is_err() {
             fs::create_dir("logs/archives").expect("FS Error: Failed To Create archives Directory");
         }
@@ -153,19 +125,48 @@ impl LogFile {
 
         if files.len() > 15 {
             log(LogType::Warn, "Log Archive Has Reached The Maximum of 15. Delete Some To Remove This Warning");
-            return;
+            return File::create("logs/log.txt").expect("FS Error: Failed To Create New log.txt File");
         }
 
-        let sys_time = Local::now().naive_local(); 
-        let formatted_path = format!("logs/archives/log {}-{} {}:{}", sys_time.month(), sys_time.day(), sys_time.hour(), sys_time.minute());
+        let sys_time = Local::now().format("%m-%d-%y %H:%M"); 
+        let formatted_path = format!("logs/archives/log {}", sys_time);
 
         let mut new_file = File::create(formatted_path).expect("FS Error: Failed To Create New Archive Log File");
+        let file_size = match log_file.metadata() {
+            Ok(metadata) => metadata.len() as usize,
+            Err(e) => {
+                log(LogType::Err, format!("Failed To Aquire MetaData for log.txt. Defaulting File Size To Config 'max_file_size' of {}. {}", max_file_size, e).as_str());
+                max_file_size
+            },
+        };
 
-        let old_buf = BufReader::new(log_file);
+        log(LogType::Info, format!("Preparing To Copy Old Log File To New Log File With Size {}", file_size).as_str());
+        let mut buf_len = std::cmp::min(MB, file_size);
+        loop {
+            let mut old_buf = vec![0; buf_len];
+            match log_file.read(&mut old_buf) {
+                Ok(n) => {
+                    new_file.write_all(&old_buf[0..n]).expect("IO Error: Failed To Write Old Log Data To New Archive Log Buffer");
+                    if n == 0 {
+                        log(LogType::Info, format!("All {} Bytes Read From Old Log File", file_size).as_str());
+                        break;
+                    }
+                },
+                Err(e) => {
+                    log(LogType::Err, format!("Error Reading From Old Log File Into New Buffer {:?}", e).as_str());
+                    break;
+                }
+            }
 
-        new_file.write_all(old_buf.buffer()).expect("IO Error: Failed To Write Old Log Data To New Archive Log Buffer");
-        new_file.flush().expect("IO Error: Failed To Flush Old Log Data To New Archive Log File");
+            // If we read less than the buffer size, we reached the end of the file
+            if buf_len > file_size {
+                break;
+            }
 
+            // Decrease the buffer size for the next iteration, but keep it at least 1 byte
+            buf_len = std::cmp::max(1, buf_len / 2);
+        }
+        File::create("logs/log.txt").expect("FS Error: Failed To Create New log.txt File")
     }
     pub fn new_stdout(&mut self, process_stdout: ProcessStdout) {
        let _ = self.new_stdout_tx.send(process_stdout); 
@@ -175,9 +176,7 @@ impl LogFile {
 impl Kill for LogFile {
     fn kill(self) {
         *self.killed.lock().unwrap() = true;
-        self.flusher_thread.join().unwrap();
-        self.rx_thread.join().unwrap();
-        self.tx_thread.join().unwrap();
+        self.logger_thread.join().unwrap();
     }
 }
 
