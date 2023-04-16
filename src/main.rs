@@ -1,8 +1,9 @@
-use std::{io::BufReader, thread, time::Duration};
+use std::{io::BufReader, thread, time::Duration, sync::{Arc, Mutex}};
 
-use chrono::{Local, NaiveTime};
+use sysinfo::{self, ProcessExt, System, SystemExt, Pid};
+use chrono::Local;
 use config::Config;
-use input::{Input, Command};
+use input::{Input, InputCommand};
 use log::{LogFile, log};
 use process::{Process, ProcessStdout};
 use smoothy::{ get_servers};
@@ -25,7 +26,8 @@ pub struct App {
     log_plugin: LogFile,
     process_plugin: Process,
     config_data: Config,
-    input_plugin: Input
+    input_plugin: Input,
+    pid: Arc<Mutex<u32>>
 }
 
 impl App {
@@ -40,9 +42,10 @@ impl App {
 
         Self { 
             log_plugin: LogFile::new(process_stdout), 
+            pid: process_plugin.pid.clone(),
             process_plugin ,
             config_data,
-            input_plugin
+            input_plugin,
         }
     }
     fn kill(self) {
@@ -55,9 +58,28 @@ impl App {
 fn main() {
     let mut app = App::new();
 
+    let pid = Arc::clone(&app.pid);
+
+    let default_panic = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let mut system = System::new();
+        system.refresh_all();
+        let pid = *pid.lock().unwrap();
+        match system.process(Pid::from(pid as usize)) {
+            Some(process) => {
+                match process.kill() {
+                    true => log(log::LogType::INFO, "Smoothy Successfully Killed"),
+                    false => log(log::LogType::ERR, format!("Failed To Kill Smoothy With PID: {}", pid).as_str()),
+                }
+            },
+            None => log(log::LogType::ERR, format!("No Valid Process Found For Smoothy's PID: {}", pid).as_str())
+        }
+        default_panic(info);
+    }));
+
     'main: loop {
         let input = app.input_plugin.input();
-        let restart = cmp_time(&app.config_data.restart_time) || input == Command::Restart; 
+        let restart = cmp_time(&app.config_data.restart_time) || input == InputCommand::Restart; 
         if restart || app.process_plugin.is_stopped() {
             app.process_plugin = app.process_plugin.restart();
             log(log::LogType::INFO, "Restarting Smoothy");
@@ -69,36 +91,37 @@ fn main() {
             }
         }
         match input {
-            Command::Restart => {
+            InputCommand::Restart => {
                 app.process_plugin = app.process_plugin.restart();
                 log(log::LogType::INFO, "Restarting Smoothy");
                 app.log_plugin.new_stdout(ProcessStdout(BufReader::new(app.process_plugin.stdout.take().unwrap())));
             },
-            Command::ListServers => {
+            InputCommand::ListServers => {
                 let servers = get_servers(app.config_data.global_data_file.to_string());
                 match servers {
                     Ok(servers) => {
                         servers.print();
                     },
-                    _ => {}
+                    _ => log(log::LogType::WARN, "No Servers Found Or An Error Occured")
                 }
             },
-            Command::Exit => {
+            InputCommand::Exit => {
                 log(log::LogType::INFO, "Exiting App");
                 log(log::LogType::INFO, "Killing Smoothy");
                 app.kill();
                 break 'main;
             },
-            Command::Help => {
-                println!("'restart': restarts the Smoothy Process\n
-                         'list-servers': lists the current connected servers\n
-                         'exit': exits the app and kills the Smoothy Process")
+            InputCommand::Help => {
+                println!(
+"'restart': restarts the Smoothy Process
+'list-servers': lists the current connected servers
+'exit': exits the app and kills the Smoothy Process")
                     ;
             },
-            Command::Invalid => {
-                println!("Invalid Command type Help for a list of commands");
+            InputCommand::Invalid => {
+                println!("Invalid InputCommand type Help for a list of commands");
             },
-            Command::None => {}
+            InputCommand::None => {}
         }
     thread::sleep(Duration::from_secs(1));
     }

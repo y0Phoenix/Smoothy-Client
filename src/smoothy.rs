@@ -31,8 +31,13 @@ pub struct Servers(Vec<Server>);
 
 impl Servers {
     pub fn print(&self) {
-        for server in self.0.iter() {
-            server.print();
+        if self.0.len() == 0 {
+            println!("Not Currently Connected To Any Server");
+        }
+        else {
+            for (i, server) in self.0.iter().enumerate() {
+                server.print(i);
+            }
         }
     }
 }
@@ -44,14 +49,15 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn print(&self) {
-        println!("VC: {}", self.name);
+    pub fn print(&self, i: usize) {
+        println!("Server #: {}\nServer Name: {}", i + 1, self.name);
         match self.curr_song.clone() {
             Some(curr_song) => {
-                println!("Current Song: \n
-                         \tTitle: {}\n
-                         \tDuration: {}\n
-                         \tUrl: {}", curr_song.title, curr_song.duration, curr_song.url)
+                println!(
+"Current Song:
+    Title: {}
+    Duration: {}
+    Url: {}", curr_song.title, curr_song.duration, curr_song.url)
                     ;
             },
             None => {
@@ -59,13 +65,16 @@ impl Server {
             }
         }
         println!("Songs In Queue");
-        if self.songs.len() > 0 {
+        if self.songs.len() > 1 {
             for (i, song) in self.songs.iter().enumerate() {
-                println!("{}\n
-                         \tTitle: {}\n
-                         \tDuration: {}\n
-                         \tUrl: {}", i, song.title, song.duration, song.url)
-                    ;
+                if i > 0 {
+                    println!(
+"{}
+    Title: {}
+    Duration: {}
+    Url: {}", i, song.title, song.duration, song.url)
+                        ;
+                }
             }
         }
         else {
@@ -74,13 +83,13 @@ impl Server {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GlobalData {
     queues: Vec<WriteQueue>,
     disconnectIdles: Vec<WriteIdle>
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WriteQueue {
     message: WriteMessage,
     id: String,
@@ -89,13 +98,13 @@ pub struct WriteQueue {
     currentsong: [Song; 1],
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WriteIdle {
     message: WriteMessage,
     id: String
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WriteMessage {
     guild: Guild,
     author: Author,
@@ -103,20 +112,20 @@ pub struct WriteMessage {
     id: String
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Song {
     title: String,
     url: String,
-    duration: u32
+    duration: String
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Guild {
     id: String,
     name: String
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Author {
     id: String
 }

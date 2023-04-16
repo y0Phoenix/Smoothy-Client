@@ -5,6 +5,7 @@ use crate::{Kill, Restart, log::log};
 pub struct Process {
     pub stdin: BufWriter<ChildStdin>,
     pub stdout: Option<ChildStdout>,
+    pub pid: Arc<Mutex<u32>>,
     server_folder: String,
     kill_tx: Sender<bool>,
     stop_checker_thread: JoinHandle<()>,
@@ -21,9 +22,9 @@ impl Process {
             .spawn()
             .expect("Internal Error Failed To Start Node App: Check That You Have node installed")
         ;
-        let pid = process.id();
+        let pid = Arc::new(Mutex::new(process.id()));
 
-        log(crate::log::LogType::INFO, format!("Aquired PID: {pid}").as_str());
+        log(crate::log::LogType::INFO, format!("Aquired PID: {}", process.id()).as_str());
 
         let stdin = BufWriter::new(process.stdin.take().expect("Internal IO Error: Failed To Aquire Nodejs Process Stdin"));
         let stdout = process.stdout.take().expect("Internal IO Error: Failed To Aquire Nodejs Process Stdou");
@@ -68,7 +69,8 @@ impl Process {
             stop_checker_thread,
             internal_stopped,
             kill_tx,
-            server_folder
+            server_folder,
+            pid
         }
     }   
     pub fn is_stopped(&self) -> bool {

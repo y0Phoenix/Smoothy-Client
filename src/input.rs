@@ -3,7 +3,7 @@ use std::{thread::{JoinHandle, self}, sync::{Arc, Mutex, mpsc}};
 use crate::Kill;
 
 #[derive(PartialEq, Eq, Default, Clone, Copy, Debug)]
-pub enum Command {
+pub enum InputCommand {
     Restart,
     ListServers,
     Exit,
@@ -13,10 +13,10 @@ pub enum Command {
     None
 } 
 
-impl Command {
+impl InputCommand {
     pub fn take(&mut self) -> Self {
         let old_self = self.clone();
-        *self = Command::default();
+        *self = InputCommand::default();
         old_self
     }
 }
@@ -64,17 +64,17 @@ impl Input {
             input 
         }
     }
-    pub fn input(&mut self) -> Command {
+    pub fn input(&mut self) -> InputCommand {
         let mut input = self.input.lock().unwrap();
         if input.is_empty() {
-            return Command::default();
+            return InputCommand::default();
         }
         let return_value = match input.as_str() {
-            "restart" => Command::Restart,
-            "list-servers" => Command::ListServers,
-            "exit" | "stop" => Command::Exit,
-            "help" => Command::Help,
-            _ => Command::Invalid
+            "restart" => InputCommand::Restart,
+            "list-servers" => InputCommand::ListServers,
+            "exit" | "stop" => InputCommand::Exit,
+            "help" => InputCommand::Help,
+            _ => InputCommand::Invalid
         };
         input.clear();
         return_value
