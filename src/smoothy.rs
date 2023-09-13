@@ -1,9 +1,28 @@
-use std::fs::read_to_string;
 use serde::*;
+use std::{
+    fs::{read_to_string, OpenOptions},
+    io::Write,
+};
 fn read_data(path: &String) -> GlobalData {
-    let global_data = read_to_string(path).unwrap_or_else(|_| panic!("FS Error: Failed To Read Contents Of {:?}", path));
+    let global_data = read_to_string(path)
+        .unwrap_or_else(|_| panic!("FS Error: Failed To Read Contents Of {:?}", path));
 
     serde_json::from_str::<GlobalData>(&global_data).expect("Error: Failed To Parsed Global Data")
+}
+
+pub fn reset_global_data(path: &String) -> Result<(), ()> {
+    let mut file = match OpenOptions::new().write(true).open(path) {
+        Ok(file) => file,
+        Err(_) => return Err(()),
+    };
+    match file.write_all("{\"queues\": [], \"disconnectIdles\": []}".as_bytes()) {
+        Ok(_) => {}
+        Err(_) => return Err(()),
+    }
+    match file.flush() {
+        Ok(_) => return Ok(()),
+        Err(_) => return Err(()),
+    }
 }
 
 pub fn get_servers(path: String) -> Result<Servers, ()> {
@@ -16,15 +35,15 @@ pub fn get_servers(path: String) -> Result<Servers, ()> {
         for song in queue.currentsong {
             curr_song = Some(song);
         }
-        
+
         servers.push(Server {
             name: queue.name.to_string(),
             songs: queue.songs,
-            curr_song
-        }); 
+            curr_song,
+        });
     }
     Ok(Servers(servers))
-}  
+}
 
 pub struct Servers(Vec<Server>);
 
@@ -32,8 +51,7 @@ impl Servers {
     pub fn print(&self) {
         if self.0.is_empty() {
             println!("Not Currently Connected To Any Server");
-        }
-        else {
+        } else {
             for (i, server) in self.0.iter().enumerate() {
                 server.print(i);
             }
@@ -44,7 +62,7 @@ impl Servers {
 pub struct Server {
     name: String,
     songs: Vec<Song>,
-    curr_song: Option<Song>
+    curr_song: Option<Song>,
 }
 
 impl Server {
@@ -53,12 +71,13 @@ impl Server {
         match self.curr_song.clone() {
             Some(curr_song) => {
                 println!(
-"Current Song:
+                    "Current Song:
     Title: {}
     Duration: {}
-    Url: {}", curr_song.title, curr_song.duration, curr_song.url)
-                    ;
-            },
+    Url: {}",
+                    curr_song.title, curr_song.duration, curr_song.url
+                );
+            }
             None => {
                 println!("Current Song: No Song Currently Playing");
             }
@@ -68,15 +87,15 @@ impl Server {
             for (i, song) in self.songs.iter().enumerate() {
                 if i > 0 {
                     println!(
-"{}
+                        "{}
     Title: {}
     Duration: {}
-    Url: {}", i, song.title, song.duration, song.url)
-                        ;
+    Url: {}",
+                        i, song.title, song.duration, song.url
+                    );
                 }
             }
-        }
-        else {
+        } else {
             println!("No Other Songs In Queue");
         }
     }
@@ -86,7 +105,7 @@ impl Server {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GlobalData {
     queues: Vec<WriteQueue>,
-    disconnectIdles: Vec<WriteIdle>
+    disconnectIdles: Vec<WriteIdle>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -101,7 +120,7 @@ pub struct WriteQueue {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WriteIdle {
     message: WriteMessage,
-    id: String
+    id: String,
 }
 
 #[allow(non_snake_case)]
@@ -110,23 +129,23 @@ pub struct WriteMessage {
     guild: Guild,
     author: Author,
     channelId: String,
-    id: String
+    id: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Song {
     title: String,
     url: String,
-    duration: String
+    duration: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Guild {
     id: String,
-    name: String
+    name: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Author {
-    id: String
+    id: String,
 }

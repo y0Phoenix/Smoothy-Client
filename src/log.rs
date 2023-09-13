@@ -57,7 +57,6 @@ impl LogFile {
             .name("stdoutreader".to_string())
             .spawn(move || {
                 let mut stdout_buf = stdout.0;
-                let mut out_buf_lines = 0;
                 let mut file_size = 0;
                 let mut displayed_warning = false;
                 loop {
@@ -82,15 +81,15 @@ impl LogFile {
                                 log(LogType::Err, format!("IO Error: Failed To Write To File Buffer: {}", e).as_str());
                                 continue
                             }
-                            out_buf_lines += 1;
-                            if out_buf_lines > 5 {
-                                out_buf.flush().expect("Internal FS Error: Failed To Flush Log File BufWriter in [thread:stdoutflusher]");
-                                out_buf_lines = 0;
+                            if let Err(e) = out_buf.flush() {
+                                log(LogType::Err, format!("Internal FS Error: Failed To Flush Log File BufWriter To Filesystem. {}", e).as_str());
                             }
                         }
                         else if !displayed_warning {
                             log(LogType::Warn, "Max File Size Reached For log.txt");
-                            out_buf.flush().expect("Internal FS Error: Failed To Flush Log File BufWriter in [thread:stdoutflusher]");
+                            if let Err(e) = out_buf.flush() {
+                                log(LogType::Err, format!("Internal FS Error: Failed To Flush Log File BufWriter To Filesystem. {}", e).as_str());
+                            }
                             displayed_warning = true;
                         }
                     }

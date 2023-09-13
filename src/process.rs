@@ -1,6 +1,15 @@
-use std::{process::{ChildStdin, ChildStdout, Command, Stdio}, io::{BufWriter, BufReader}, sync::{Arc, Mutex, mpsc::{self, Sender}}, thread::{JoinHandle, self}, time::Duration};
+use std::{
+    io::{BufReader, BufWriter},
+    process::{ChildStdin, ChildStdout, Command, Stdio},
+    sync::{
+        mpsc::{self, Sender},
+        Arc, Mutex,
+    },
+    thread::{self, JoinHandle},
+    time::Duration,
+};
 
-use crate::{Kill, Restart, log::log};
+use crate::{log::log, Kill, Restart};
 
 pub struct Process {
     pub stdin: BufWriter<ChildStdin>,
@@ -20,14 +29,24 @@ impl Process {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
-            .expect("Internal Error Failed To Start Node App: Check That You Have node installed")
-        ;
+            .expect("Internal Error Failed To Start Node App: Check That You Have node installed");
         let pid = Arc::new(Mutex::new(process.id()));
 
-        log(crate::log::LogType::Info, format!("Aquired PID: {}", process.id()).as_str());
+        log(
+            crate::log::LogType::Info,
+            format!("Aquired PID: {}", process.id()).as_str(),
+        );
 
-        let stdin = BufWriter::new(process.stdin.take().expect("Internal IO Error: Failed To Aquire Nodejs Process Stdin"));
-        let stdout = process.stdout.take().expect("Internal IO Error: Failed To Aquire Nodejs Process Stdou");
+        let stdin = BufWriter::new(
+            process
+                .stdin
+                .take()
+                .expect("Internal IO Error: Failed To Aquire Nodejs Process Stdin"),
+        );
+        let stdout = process
+            .stdout
+            .take()
+            .expect("Internal IO Error: Failed To Aquire Nodejs Process Stdou");
 
         let internal_stopped = Arc::new(Mutex::new(false));
         let internal_stopped_clone = Arc::clone(&internal_stopped);
@@ -41,8 +60,12 @@ impl Process {
                 loop {
                     if kill_rx.recv_timeout(Duration::from_secs(2)).is_ok() {
                         log(crate::log::LogType::Info, "Attemping To Kill Smoothy");
-                        process.kill().expect("Internale IO Error: Failed To Kill Smoothy Process");
-                        process.wait().expect("Internal IO Error: Failed To Kill Smoothy Process");
+                        process
+                            .kill()
+                            .expect("Internale IO Error: Failed To Kill Smoothy Process");
+                        process
+                            .wait()
+                            .expect("Internal IO Error: Failed To Kill Smoothy Process");
                         log(crate::log::LogType::Info, "Smoothy Successfully Killed");
                         break;
                     }
@@ -51,26 +74,25 @@ impl Process {
                             println!("Smoothy Stopped");
                             *internal_stopped.lock().unwrap() = true;
                             break;
-                        },
-                        Ok(None) => {},
-                        Err(_) => {},
-                    }    
+                        }
+                        Ok(None) => {}
+                        Err(_) => {}
+                    }
                 }
             })
-            .unwrap()
-        ;
+            .unwrap();
 
-        Self { 
-            stdin, 
-            stdout: Some(stdout), 
+        Self {
+            stdin,
+            stdout: Some(stdout),
             stop_checker_thread,
             internal_stopped,
             kill_tx,
             server_folder,
-            pid
+            pid,
         }
-    }   
-    pub fn is_stopped(&self) -> bool {
+    }
+    pub fn is_stopped(&mut self) -> bool {
         *self.internal_stopped.lock().unwrap()
     }
 }
