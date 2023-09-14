@@ -25,7 +25,7 @@ pub enum KillType {
 pub struct LogFile {
     logger_thread: JoinHandle<()>,
     new_out_tx: Sender<ProcessOutput>,
-    client_log_tx: Sender<String>,
+    // client_log_tx: Sender<String>,
     stderr_finished: Arc<Mutex<bool>>,
     killed: Arc<Mutex<Option<KillType>>>,
 }
@@ -62,7 +62,7 @@ impl LogFile {
         let mut out_buf = BufWriter::new(out_file.try_clone().unwrap());
 
         let (new_out_tx, new_out_rx) = mpsc::channel::<ProcessOutput>();
-        let (client_log_tx, client_log_rx) = mpsc::channel::<String>();
+        // let (client_log_tx, client_log_rx) = mpsc::channel::<String>();
 
         let logger_thread = thread::Builder::new()
             .name("loggerthread".to_string())
@@ -142,7 +142,7 @@ impl LogFile {
             logger_thread,
             stderr_finished,
             new_out_tx,
-            client_log_tx,
+            // client_log_tx,
             killed,
         }
     }
@@ -297,9 +297,9 @@ impl LogFile {
     pub fn report_crash(&mut self) {
         *self.killed.lock().unwrap() = Some(KillType::Crash);
     }
-    pub fn log_from_client(&mut self, output: String) {
-        let _ = self.client_log_tx.send(output);
-    }
+    // pub fn log_from_client(&mut self, output: String) {
+    //     let _ = self.client_log_tx.send(output);
+    // }
 }
 
 impl Kill for LogFile {
@@ -340,4 +340,5 @@ pub fn log_time() -> String {
 
 pub fn log(log_type: LogType, msg: &str) {
     println!("{} {} {}", log_time(), log_type.prefix(), msg);
+    
 }
