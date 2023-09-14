@@ -12,19 +12,26 @@ use std::{
 
 use chrono::{Local, NaiveDateTime};
 
-use crate::{process::ProcessStdout, Kill};
+use crate::{process::ProcessOutput, Kill};
 
 const MB: usize = 1024 * 1024;
 // const GB: usize = 1024 * 1000000;
 
+pub enum KillType {
+    Crash,
+    Kill,
+}
+
 pub struct LogFile {
     logger_thread: JoinHandle<()>,
-    new_stdout_tx: Sender<ProcessStdout>,
-    killed: Arc<Mutex<bool>>,
+    new_out_tx: Sender<ProcessOutput>,
+    client_log_tx: Sender<String>,
+    stderr_finished: Arc<Mutex<bool>>,
+    killed: Arc<Mutex<Option<KillType>>>,
 }
 
 impl LogFile {
-    pub fn new(stdout: ProcessStdout, max_file_size: usize) -> Self {
+    pub fn new(process_output: ProcessOutput, max_file_size: usize) -> Self {
         let mut new_log = true;
         if fs::metadata("logs").is_err() {
             create_dir("logs").expect("FS Error: Failed To Create logs Directory");
@@ -46,61 +53,96 @@ impl LogFile {
         if !new_log {
             out_file = LogFile::archive_log(out_file.try_clone().unwrap(), max_file_size);
         }
-        let killed = Arc::new(Mutex::new(false));
+        let killed = Arc::new(Mutex::new(None));
         let killed_clone = Arc::clone(&killed);
+        // needed to let the stderr finish collecting and logging before closing the child app
+        let stderr_finished = Arc::new(Mutex::new(false));
+        let stderr_finished_clone = Arc::clone(&stderr_finished);
 
         let mut out_buf = BufWriter::new(out_file.try_clone().unwrap());
 
-        let (new_stdout_tx, new_stdout_rx) = mpsc::channel::<ProcessStdout>();
+        let (new_out_tx, new_out_rx) = mpsc::channel::<ProcessOutput>();
+        let (client_log_tx, client_log_rx) = mpsc::channel::<String>();
 
         let logger_thread = thread::Builder::new()
-            .name("stdoutreader".to_string())
+            .name("loggerthread".to_string())
             .spawn(move || {
-                let mut stdout_buf = stdout.0;
+                let mut stdout_buf = process_output.stdout;
+                let mut stderr_buf = process_output.stderr;
                 let mut file_size = 0;
                 let mut displayed_warning = false;
+                // Output is an Option where Some means you want to log and output whereas None
+                // means you just want to flush the buffer
+                let mut log_output = |output: Option<String>| {
+                    if let Some(output) = output {
+                        if let Err(e) = out_buf.write(output.as_bytes()) {
+                            log(LogType::Err, format!("IO Error: Failed To Write To File Buffer: {}", e).as_str());
+                        }
+                        if let Err(e) = out_buf.flush() {
+                            log(LogType::Err, format!("Internal FS Error: Failed To Flush Log File BufWriter To Filesystem. {}", e).as_str());
+                        }
+                    }
+                    else {
+                        if let Err(e) = out_buf.flush() {
+                            log(LogType::Err, format!("Internal FS Error: Failed To Flush Log File BufWriter To Filesystem. {}", e).as_str());
+                        }
+                    }
+                };
                 loop {
-                    if let Ok(new_stdout) = new_stdout_rx.recv_timeout(Duration::from_secs(1)) {
-                        stdout_buf = new_stdout.0;
+                    if let Ok(new_out) = new_out_rx.recv_timeout(Duration::from_millis(1)) {
+                        stdout_buf = new_out.stdout;
+                        stderr_buf = new_out.stderr;
                     }
                     if stdout_buf.buffer().len() >= stdout_buf.capacity() {
                         let stdout = stdout_buf.into_inner();
                         stdout_buf = BufReader::new(stdout);
                     }
-                    let mut output = String::new();
-                    stdout_buf.read_line(&mut output).expect("Internal IO Error: Error Reading Line From Child Process stdout");
-                    if output.is_empty() && *killed_clone.lock().unwrap() {
-                        break;
+                    let kill_type = killed_clone.lock().unwrap().take();
+                    let mut std_out_output = String::new();
+                    stdout_buf.read_line(&mut std_out_output).expect("Internal IO Error: Error Reading Line From Child Process stdout");
+                    if let Some(kill_type) = kill_type {
+                        match kill_type {
+                            KillType::Crash => {
+                                thread::sleep(Duration::from_millis(10));
+                                loop {
+                                    let mut std_err_output = String::new();
+                                    stderr_buf.read_line(&mut std_err_output).expect("Internal IO Error: Error Reading Line From Child Process stderr");
+                                    if std_err_output.is_empty() {
+                                        *killed_clone.lock().unwrap() = None;
+                                        *stderr_finished_clone.lock().unwrap() = true;
+                                        break;
+                                    }
+                                    std_err_output = format!("{} {}", log_time(), std_err_output); 
+                                    print!("{std_err_output}");
+                                    log_output(Some(std_err_output));
+                                }
+                            } 
+                            KillType::Kill => break
+                        }
                     }
-                    if !output.is_empty() {
-                        file_size += output.as_bytes().len();
+                    if !std_out_output.is_empty() {
+                        file_size += std_out_output.as_bytes().len();
                         if file_size < max_file_size {
-                            output = format!("{} {}", log_time(), output);
-                            print!("{output}");
-                            if let Err(e) = out_buf.write(output.as_bytes()) {
-                                log(LogType::Err, format!("IO Error: Failed To Write To File Buffer: {}", e).as_str());
-                                continue
-                            }
-                            if let Err(e) = out_buf.flush() {
-                                log(LogType::Err, format!("Internal FS Error: Failed To Flush Log File BufWriter To Filesystem. {}", e).as_str());
-                            }
+                            std_out_output= format!("{} {}", log_time(), std_out_output);
+                            print!("{std_out_output}");
+                            log_output(Some(std_out_output));
                         }
                         else if !displayed_warning {
                             log(LogType::Warn, "Max File Size Reached For log.txt");
-                            if let Err(e) = out_buf.flush() {
-                                log(LogType::Err, format!("Internal FS Error: Failed To Flush Log File BufWriter To Filesystem. {}", e).as_str());
-                            }
+                            log_output(None);
                             displayed_warning = true;
                         }
                     }
                 }
             })
-            .expect("Internal Thread Error: Failed to Spawn [thread:stdoutreader]")
+            .expect("Internal Thread Error: Failed to Spawn [thread:loggerthread]")
         ;
 
         Self {
             logger_thread,
-            new_stdout_tx,
+            stderr_finished,
+            new_out_tx,
+            client_log_tx,
             killed,
         }
     }
@@ -246,14 +288,23 @@ impl LogFile {
         }
         Some(file_to_remove)
     }
-    pub fn new_stdout(&mut self, process_stdout: ProcessStdout) {
-        let _ = self.new_stdout_tx.send(process_stdout);
+    pub fn new_process_out(&mut self, process_output: ProcessOutput) {
+        let _ = self.new_out_tx.send(process_output);
+    }
+    pub fn finished_logging(&self) -> bool {
+        *self.stderr_finished.lock().unwrap()
+    }
+    pub fn report_crash(&mut self) {
+        *self.killed.lock().unwrap() = Some(KillType::Crash);
+    }
+    pub fn log_from_client(&mut self, output: String) {
+        let _ = self.client_log_tx.send(output);
     }
 }
 
 impl Kill for LogFile {
     fn kill(self) {
-        *self.killed.lock().unwrap() = true;
+        *self.killed.lock().unwrap() = Some(KillType::Kill);
         self.logger_thread.join().unwrap();
     }
 }

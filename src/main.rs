@@ -9,7 +9,7 @@ use chrono::Local;
 use config::Config;
 use input::{Input, InputCommand};
 use log::{log, LogFile};
-use process::{Process, ProcessStdout};
+use process::{Process, ProcessOutput};
 use rusty_time::Timer;
 use smoothy::{get_servers, reset_global_data};
 use sysinfo::{self, Pid, ProcessExt, System, SystemExt};
@@ -46,10 +46,13 @@ impl App {
 
         let mut process_plugin = Process::new(config_data.server_folder.clone());
 
-        let process_stdout = ProcessStdout(BufReader::new(process_plugin.stdout.take().unwrap()));
+        let process_output = ProcessOutput {
+            stderr: BufReader::new(process_plugin.stderr.take().unwrap()),
+            stdout: BufReader::new(process_plugin.stdout.take().unwrap()),
+        };
 
         Self {
-            log_plugin: LogFile::new(process_stdout, config_data.max_file_size),
+            log_plugin: LogFile::new(process_output, config_data.max_file_size),
             pid: process_plugin.pid.clone(),
             process_plugin,
             config_data,
@@ -71,6 +74,7 @@ impl App {
                 self.crash_count_timer.reset();
             }
             self.crash_count += 1;
+            self.log_plugin.report_crash();
         }
         self.crash_count_timer.update(delta);
         if !self.crash_count_timer.ready && self.crash_count >= self.config_data.max_crash_count {
@@ -81,6 +85,15 @@ impl App {
         false
     }
     pub fn restart(mut self, new_buf: bool, reset_crash_count: bool) -> Self {
+        // check if the log plugin is finished logging the stderr output before starting a new one
+        // we need to stop the current thread until the logger thread is finished with it's own
+        // task
+        loop {
+            thread::sleep(Duration::from_millis(1));
+            if self.log_plugin.finished_logging() {
+                break;
+            }
+        }
         self.process_plugin = self.process_plugin.restart();
         if reset_crash_count {
             self.crash_count = 0;
@@ -96,14 +109,18 @@ impl App {
         // restart with a new stdout buff
         if new_buf {
             self.log_plugin = LogFile::new(
-                ProcessStdout(BufReader::new(self.process_plugin.stdout.take().unwrap())),
+                ProcessOutput {
+                    stdout: BufReader::new(self.process_plugin.stdout.take().unwrap()),
+                    stderr: BufReader::new(self.process_plugin.stderr.take().unwrap()),
+                },
                 self.config_data.max_file_size,
             );
         // restart with the old buff appended onto the new buff
         } else {
-            self.log_plugin.new_stdout(ProcessStdout(BufReader::new(
-                self.process_plugin.stdout.take().unwrap(),
-            )));
+            self.log_plugin.new_process_out(ProcessOutput {
+                stdout: BufReader::new(self.process_plugin.stdout.take().unwrap()),
+                stderr: BufReader::new(self.process_plugin.stderr.take().unwrap()),
+            })
         }
         self
     }

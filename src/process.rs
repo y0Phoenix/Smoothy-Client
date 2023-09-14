@@ -1,6 +1,6 @@
 use std::{
     io::{BufReader, BufWriter},
-    process::{ChildStdin, ChildStdout, Command, Stdio},
+    process::{ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
         mpsc::{self, Sender},
         Arc, Mutex,
@@ -14,6 +14,7 @@ use crate::{log::log, Kill, Restart};
 pub struct Process {
     pub stdin: BufWriter<ChildStdin>,
     pub stdout: Option<ChildStdout>,
+    pub stderr: Option<ChildStderr>,
     pub pid: Arc<Mutex<u32>>,
     server_folder: String,
     kill_tx: Sender<bool>,
@@ -28,6 +29,7 @@ impl Process {
             .arg("build/main.js")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .expect("Internal Error Failed To Start Node App: Check That You Have node installed");
         let pid = Arc::new(Mutex::new(process.id()));
@@ -47,6 +49,10 @@ impl Process {
             .stdout
             .take()
             .expect("Internal IO Error: Failed To Aquire Nodejs Process Stdou");
+        let stderr = process
+            .stderr
+            .take()
+            .expect("Internal IO Error: Failed To Aquire Nodejs Process Stderr");
 
         let internal_stopped = Arc::new(Mutex::new(false));
         let internal_stopped_clone = Arc::clone(&internal_stopped);
@@ -71,7 +77,7 @@ impl Process {
                     }
                     match process.try_wait() {
                         Ok(Some(_)) => {
-                            println!("Smoothy Stopped");
+                            log(crate::log::LogType::Warn, "Smoothy Stopped");
                             *internal_stopped.lock().unwrap() = true;
                             break;
                         }
@@ -85,6 +91,7 @@ impl Process {
         Self {
             stdin,
             stdout: Some(stdout),
+            stderr: Some(stderr),
             stop_checker_thread,
             internal_stopped,
             kill_tx,
@@ -119,4 +126,7 @@ impl Restart for Process {
     }
 }
 
-pub struct ProcessStdout(pub BufReader<ChildStdout>);
+pub struct ProcessOutput {
+    pub stdout: BufReader<ChildStdout>,
+    pub stderr: BufReader<ChildStderr>,
+}
