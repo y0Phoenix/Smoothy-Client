@@ -26,7 +26,6 @@ pub struct LogFile {
     logger_thread: JoinHandle<()>,
     new_out_tx: Sender<ProcessOutput>,
     // client_log_tx: Sender<String>,
-    stderr_finished: Arc<Mutex<bool>>,
     killed: Arc<Mutex<Option<KillType>>>,
 }
 
@@ -55,9 +54,6 @@ impl LogFile {
         }
         let killed = Arc::new(Mutex::new(None));
         let killed_clone = Arc::clone(&killed);
-        // needed to let the stderr finish collecting and logging before closing the child app
-        let stderr_finished = Arc::new(Mutex::new(false));
-        let stderr_finished_clone = Arc::clone(&stderr_finished);
 
         let mut out_buf = BufWriter::new(out_file.try_clone().unwrap());
 
@@ -109,7 +105,6 @@ impl LogFile {
                                     stderr_buf.read_line(&mut std_err_output).expect("Internal IO Error: Error Reading Line From Child Process stderr");
                                     if std_err_output.is_empty() {
                                         *killed_clone.lock().unwrap() = None;
-                                        *stderr_finished_clone.lock().unwrap() = true;
                                         break;
                                     }
                                     std_err_output = format!("{} {}", log_time(), std_err_output); 
@@ -140,7 +135,7 @@ impl LogFile {
 
         Self {
             logger_thread,
-            stderr_finished,
+            // stderr_finished,
             new_out_tx,
             // client_log_tx,
             killed,
@@ -290,9 +285,6 @@ impl LogFile {
     }
     pub fn new_process_out(&mut self, process_output: ProcessOutput) {
         let _ = self.new_out_tx.send(process_output);
-    }
-    pub fn finished_logging(&self) -> bool {
-        *self.stderr_finished.lock().unwrap()
     }
     pub fn report_crash(&mut self) {
         *self.killed.lock().unwrap() = Some(KillType::Crash);

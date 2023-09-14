@@ -85,15 +85,6 @@ impl App {
         false
     }
     pub fn restart(mut self, new_buf: bool, reset_crash_count: bool) -> Self {
-        // check if the log plugin is finished logging the stderr output before starting a new one
-        // we need to stop the current thread until the logger thread is finished with it's own
-        // task
-        loop {
-            thread::sleep(Duration::from_millis(1));
-            if self.log_plugin.finished_logging() {
-                break;
-            }
-        }
         self.process_plugin = self.process_plugin.restart();
         if reset_crash_count {
             self.crash_count = 0;
@@ -189,7 +180,7 @@ fn main() {
             );
             app = app.restart(false, reset_crash_count);
         }
-        if restart || input == InputCommand::Restart {
+        if restart {
             if restart {
                 log(
                     log::LogType::Info,
