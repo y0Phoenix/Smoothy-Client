@@ -1,8 +1,10 @@
 use serde::*;
 use std::{
-    fs::{read_to_string, OpenOptions},
+    fs::{self, read_to_string, OpenOptions},
     io::Write,
 };
+
+use crate::log::log;
 fn read_data(path: &String) -> GlobalData {
     let global_data = read_to_string(path)
         .unwrap_or_else(|_| panic!("FS Error: Failed To Read Contents Of {:?}", path));
@@ -11,9 +13,16 @@ fn read_data(path: &String) -> GlobalData {
 }
 
 pub fn reset_global_data(path: &String) -> Result<(), ()> {
-    let mut file = match OpenOptions::new().write(true).open(path) {
+    if let Err(_) = fs::remove_file(path) {}
+    let mut file = match OpenOptions::new().create(true).write(true).open(path) {
         Ok(file) => file,
-        Err(_) => return Err(()),
+        Err(_) => {
+            log(
+                crate::log::LogType::Err,
+                "Error Opening New global.json file",
+            );
+            return Err(());
+        }
     };
     match file.write_all("{\"queues\": [], \"disconnectIdles\": []}".as_bytes()) {
         Ok(_) => {}
