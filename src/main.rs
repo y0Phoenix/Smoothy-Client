@@ -11,7 +11,7 @@ use input::{Input, InputCommand};
 use log::{log, LogFile};
 use process::{Process, ProcessOutput};
 use rusty_time::Timer;
-use smoothy::{get_servers, reset_global_data};
+// use smoothy::{get_servers, reset_global_data};
 use sysinfo::{self, Pid, ProcessExt, System, SystemExt};
 
 mod config;
@@ -146,32 +146,39 @@ fn main() {
     let mut instant = Instant::now();
 
     'main: loop {
-        let mut input = app.input_plugin.input();
+        let input = app.input_plugin.input();
         let restart = cmp_time(&app.config_data.restart_time);
         let max_crash = app.max_crash_count(instant.elapsed());
         instant = Instant::now();
-        let mut reset_crash_count = false;
+        let reset_crash_count = false;
         if max_crash {
             log(
                 log::LogType::Err,
                 "Smoothy Has Crashed The Max Amount `10` In Under 5 Minutes. Resetting Gloabal Data To Prevent Crashing"
                 );
-            match reset_global_data(&app.config_data.global_data_file) {
-                Ok(_) => {
-                    log(
-                        log::LogType::Info,
-                        "Successfully Reset Smoothy Global Data Attempting Restart",
-                    );
-                    reset_crash_count = true;
-                }
-                Err(_) => {
-                    log(
-                        log::LogType::Err,
-                        "Something Went Wrong Resetting Smoothy Global Data. Closing Program To Prevent Further Crashing"
-                    );
-                    input = InputCommand::Exit;
-                }
-            }
+            // TODO reset DB instead of global file
+            todo!("reset DB instead of global file");
+            /*
+            
+            DEPRECATED code from nodejs smoothy
+            
+             */
+            // // match reset_global_data(&app.config_data.global_data_file) {
+            // //    Ok(_) => {
+            // //        log(
+            // //            log::LogType::Info,
+            // //            "Successfully Reset Smoothy Global Data Attempting Restart",
+            // //        );
+            // //        reset_crash_count = true;
+            // //    }
+            // //    Err(_) => {
+            // //        log(
+            // //            log::LogType::Err,
+            // //            "Something Went Wrong Resetting Smoothy Global Data. Closing Program To Prevent Further Crashing"
+            // //        );
+            // //        input = InputCommand::Exit;
+            // //    }
+            // //}
         }
         if app.process_plugin.is_stopped() {
             log(
@@ -200,15 +207,15 @@ fn main() {
                 app = app.restart(false, reset_crash_count);
                 log(log::LogType::Info, "Restarting Smoothy");
             }
-            InputCommand::ListServers => {
-                let servers = get_servers(app.config_data.global_data_file.to_string());
-                match servers {
-                    Ok(servers) => {
-                        servers.print();
-                    }
-                    _ => log(log::LogType::Warn, "No Servers Found Or An Error Occured"),
-                }
-            }
+            // InputCommand::ListServers => {
+            //     let servers = get_servers(app.config_data.global_data_file.to_string());
+            //     match servers {
+            //         Ok(servers) => {
+            //             servers.print();
+            //         }
+            //         _ => log(log::LogType::Warn, "No Servers Found Or An Error Occured"),
+            //     }
+            // }
             InputCommand::Exit => {
                 log(log::LogType::Info, "Exiting App");
                 log(log::LogType::Info, "Killing Smoothy");
@@ -225,7 +232,8 @@ fn main() {
             InputCommand::Invalid => {
                 println!("Invalid InputCommand type Help for a list of commands");
             }
-            InputCommand::None => {}
+            InputCommand::None => {},
+            _ => {}
         }
         thread::sleep(Duration::from_secs(1));
     }

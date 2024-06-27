@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use std::{
     io::{BufReader, BufWriter},
     process::{ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
@@ -12,7 +13,7 @@ use std::{
 use crate::{log::log, Kill, Restart};
 
 pub struct Process {
-    pub stdin: BufWriter<ChildStdin>,
+    // pub stdin: BufWriter<ChildStdin>,
     pub stdout: Option<ChildStdout>,
     pub stderr: Option<ChildStderr>,
     pub pid: Arc<Mutex<u32>>,
@@ -24,14 +25,14 @@ pub struct Process {
 
 impl Process {
     pub fn new(server_folder: String) -> Self {
-        let mut process = Command::new("node")
+        let mut process = Command::new("cargo")
             .current_dir(server_folder.as_str())
-            .arg("build/main.js")
+            .args(["run", "--release"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .expect("Internal Error Failed To Start Node App: Check That You Have node installed");
+            .expect("Internal Error Failed To Start Rust App: Check That You Have rust installed");
         let pid = Arc::new(Mutex::new(process.id()));
 
         log(
@@ -39,20 +40,20 @@ impl Process {
             format!("Aquired PID: {}", process.id()).as_str(),
         );
 
-        let stdin = BufWriter::new(
-            process
-                .stdin
-                .take()
-                .expect("Internal IO Error: Failed To Aquire Nodejs Process Stdin"),
-        );
+        // let stdin = BufWriter::new(
+        //     process
+        //         .stdin
+        //         .take()
+        //         .expect("Internal IO Error: Failed To Aquire Rust Process Stdin"),
+        // );
         let stdout = process
             .stdout
             .take()
-            .expect("Internal IO Error: Failed To Aquire Nodejs Process Stdou");
+            .expect("Internal IO Error: Failed To Aquire Rust Process Stdou");
         let stderr = process
             .stderr
             .take()
-            .expect("Internal IO Error: Failed To Aquire Nodejs Process Stderr");
+            .expect("Internal IO Error: Failed To Aquire Rust Process Stderr");
 
         let internal_stopped = Arc::new(Mutex::new(false));
         let internal_stopped_clone = Arc::clone(&internal_stopped);
@@ -89,7 +90,7 @@ impl Process {
             .unwrap();
 
         Self {
-            stdin,
+            // stdin,
             stdout: Some(stdout),
             stderr: Some(stderr),
             stop_checker_thread,
