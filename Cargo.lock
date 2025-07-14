@@ -150,6 +150,8 @@ checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 [[package]]
 name = "logio"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4141043c38d2d5faa631974bc96f615a535d76e4e393aaa15409b544d41cfed3"
 dependencies = [
  "chrono",
 ]

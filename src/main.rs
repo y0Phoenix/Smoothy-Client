@@ -56,11 +56,11 @@ impl App {
         logio::init(
             Logger::new()
                 .log_file(LogioFile::new(
-                    FileName("log.log"),
+                    FileName("log.txt"),
                     Directory("logs"),
                     ArchiveType::Archive("archives"),
                 ))
-                .input_buf(Box::new(process_plugin.stderr.take().unwrap()))
+                //.input_buf(Box::new(process_plugin.stderr.take().unwrap()))
                 .input_buf(Box::new(process_plugin.stdout.take().unwrap()))
                 .run(),
         );
