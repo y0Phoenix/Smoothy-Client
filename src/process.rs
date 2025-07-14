@@ -1,4 +1,3 @@
-use std::env;
 #[allow(unused_imports)]
 use std::{
     io::{BufReader, BufWriter},
