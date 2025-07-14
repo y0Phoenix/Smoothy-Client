@@ -25,7 +25,7 @@ THIS CODE IS DEPRECATED FROM THE OLD NODEJS SMOOTHY
 //     let mut file = match OpenOptions::new().create(true).write(true).open(path) {
 //         Ok(file) => file,
 //         Err(_) => {
-//             log(
+//             logio!(
 //                 crate::log::LogType::Err,
 //                 "Error Opening New global.json file",
 //             );

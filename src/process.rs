@@ -1,3 +1,4 @@
+use std::env;
 #[allow(unused_imports)]
 use std::{
     io::{BufReader, BufWriter},
@@ -10,7 +11,9 @@ use std::{
     time::Duration,
 };
 
-use crate::{log::log, Kill, Restart};
+use logio::{info, warn};
+
+use crate::{Kill, Restart};
 
 pub struct Process {
     // pub stdin: BufWriter<ChildStdin>,
@@ -26,6 +29,7 @@ pub struct Process {
 impl Process {
     pub fn new(server_folder: String) -> Self {
         let mut process = Command::new("cargo")
+            .env("RUST_STDIO_BUFFERED", "0")
             .current_dir(server_folder.as_str())
             .args(["run", "--release"])
             .stdin(Stdio::piped())
@@ -35,10 +39,7 @@ impl Process {
             .expect("Internal Error Failed To Start Rust App: Check That You Have rust installed");
         let pid = Arc::new(Mutex::new(process.id()));
 
-        log(
-            crate::log::LogType::Info,
-            format!("Aquired PID: {}", process.id()).as_str(),
-        );
+        info!("Aquired PID: {}", process.id());
 
         // let stdin = BufWriter::new(
         //     process
@@ -66,19 +67,19 @@ impl Process {
                 let internal_stopped = internal_stopped_clone;
                 loop {
                     if kill_rx.recv_timeout(Duration::from_secs(2)).is_ok() {
-                        log(crate::log::LogType::Info, "Attemping To Kill Smoothy");
+                        info!("Attemping To Kill Smoothy");
                         process
                             .kill()
                             .expect("Internale IO Error: Failed To Kill Smoothy Process");
                         process
                             .wait()
                             .expect("Internal IO Error: Failed To Kill Smoothy Process");
-                        log(crate::log::LogType::Info, "Smoothy Successfully Killed");
+                        info!("Smoothy Successfully Killed");
                         break;
                     }
                     match process.try_wait() {
                         Ok(Some(_)) => {
-                            log(crate::log::LogType::Warn, "Smoothy Stopped");
+                            warn!("Smoothy Stopped");
                             *internal_stopped.lock().unwrap() = true;
                             break;
                         }
@@ -125,9 +126,4 @@ impl Restart for Process {
         drop(self.kill_tx);
         Process::new(self.server_folder)
     }
-}
-
-pub struct ProcessOutput {
-    pub stdout: BufReader<ChildStdout>,
-    pub stderr: BufReader<ChildStderr>,
 }
